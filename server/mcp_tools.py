@@ -278,21 +278,32 @@ class VaultTools:
         the boot flow (Task 7) writes it, the file is absent → ok:false,
         last_sync_at:None.
         """
-        record: dict[str, Any] | None = None
-        try:
-            raw = (self._cfg.state_dir / _LAST_SYNC_FILE).read_text(encoding="utf-8")
-            parsed = json.loads(raw) if raw.strip() else None
-            if isinstance(parsed, dict):
-                record = parsed
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            record = None
-        last_sync_at = record.get("last_sync_at") if record else None
-        ok = record.get("ok") if record else None
-        return {
-            "mode": self._cfg.sync_mode,
-            "last_sync_at": last_sync_at if isinstance(last_sync_at, str) else None,
-            "ok": bool(ok) if isinstance(ok, bool) else False,
-        }
+        return sync_state(self._cfg.state_dir, self._cfg.sync_mode)
+
+
+def sync_state(state_dir: Any, sync_mode: str) -> dict[str, Any]:
+    """last_sync.json in state_dir; missing/corrupt degrades to honest defaults.
+
+    Shape: {"mode", "last_sync_at", "ok"}. The watermark carries "ok"; until
+    the boot flow (Task 7) writes it, the file is absent → ok:false,
+    last_sync_at:None. `state_dir` is a pathlib.Path (Any only to avoid an
+    import cycle; web.py imports mcp_tools, not the reverse).
+    """
+    record: dict[str, Any] | None = None
+    try:
+        raw = (state_dir / "last_sync.json").read_text(encoding="utf-8")
+        parsed = json.loads(raw) if raw.strip() else None
+        if isinstance(parsed, dict):
+            record = parsed
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        record = None
+    last_sync_at = record.get("last_sync_at") if record else None
+    ok = record.get("ok") if record else None
+    return {
+        "mode": sync_mode,
+        "last_sync_at": last_sync_at if isinstance(last_sync_at, str) else None,
+        "ok": bool(ok) if isinstance(ok, bool) else False,
+    }
 
 
 def _tags_of(frontmatter: dict[str, Any]) -> list[str]:
