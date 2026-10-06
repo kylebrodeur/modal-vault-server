@@ -156,6 +156,13 @@ class TestListTool:
         out = await _tools(vault).call("vault.list", {"prefix": "Projects/"})
         assert [n["path"] for n in out["notes"]] == ["Projects/Roadmap.md"]
 
+    async def test_escaping_prefix_degrades_to_empty_not_whole_vault(self, vault: Path) -> None:
+        for out in (
+            await _tools(vault).call("vault.list", {"prefix": "../x"}),
+            await _tools(vault).call("vault.search", {"query": "alpha", "prefix": "/etc"}),
+        ):
+            assert out["count"] == 0 if "count" in out else out["results"] == []
+
 
 class TestQueryGraphTool:
     """vault.query_graph: seed-resolved edge neighborhood; unknown kind is an error reply."""

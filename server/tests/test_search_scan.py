@@ -82,6 +82,13 @@ class TestCollectNotes:
         assert collect_notes(tmp_path, prefix="") == collect_notes(tmp_path)
         assert len(collect_notes(tmp_path)) == 2
 
+    def test_escaping_prefix_collects_nothing(self, tmp_path: Path) -> None:
+        # An invalid/escaping prefix must NOT fall back to the whole vault.
+        _write_vault(tmp_path, {"a.md": "x\n", "b/b.md": "y\n"})
+        assert collect_notes(tmp_path, prefix="../x") == []
+        assert collect_notes(tmp_path, prefix="/etc") == []
+        assert collect_notes(tmp_path, prefix="..") == []
+
     def test_empty_vault(self, tmp_path: Path) -> None:
         assert collect_notes(tmp_path) == []
 
@@ -135,6 +142,12 @@ class TestScanVault:
         _write_vault(tmp_path, SCAN_NOTES)
         results = scan_vault(tmp_path, "gamma", prefix="beta/")
         assert [r["id"] for r in results] == ["beta/beta.md"]
+
+    def test_escaping_prefix_matches_nothing(self, tmp_path: Path) -> None:
+        # An invalid/escaping prefix must NOT fall back to the whole vault.
+        _write_vault(tmp_path, SCAN_NOTES)
+        assert scan_vault(tmp_path, "gamma", prefix="../x") == []
+        assert scan_vault(tmp_path, "gamma", prefix="/etc") == []
 
     def test_no_match_returns_empty(self, tmp_path: Path) -> None:
         _write_vault(tmp_path, SCAN_NOTES)

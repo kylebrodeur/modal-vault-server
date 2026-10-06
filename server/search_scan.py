@@ -68,11 +68,17 @@ def _is_subdir(vault_dir: Path, rel: str) -> bool:
 
 
 def _notes_under(vault_dir: Path, prefix: str) -> list[str]:
-    """Relative note paths under a caller-supplied prefix (""/subtree root); [] when unreachable."""
+    """Relative note paths under a caller-supplied prefix; [] when unreachable or invalid.
+
+    Callers short-circuit a literal-empty prefix ("no restriction") before
+    calling; "" reaching this function means the prefix FAILED normalization
+    (escaped the vault, absolute, or empty after norm) — an empty answer is
+    the correct, prefix-contract-preserving degrade, never a whole-vault walk.
+    """
     rel = posixpath_norm(prefix)
     if _is_subdir(vault_dir, rel):
         return _walk_note_paths(vault_dir, rel)
-    return [] if rel else _walk_note_paths(vault_dir, "")
+    return []
 
 
 def collect_notes(vault_dir: Path, prefix: str = "") -> list[dict]:
