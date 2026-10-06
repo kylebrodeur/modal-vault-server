@@ -19,31 +19,18 @@ class Config:
 
     api_token: str
     data_dir: Path  # vault clone
-    index_dir: Path
-    state_dir: Path
-    embed_url: str | None
-    embed_api_token: str | None
-    embed_model: str = "embeddinggemma"
-    embed_dim: int = 768
+    state_dir: Path  # ob login/sync state
     sync_mode: str = "pull-only"
     sync_timeout: int = 1800
 
     @classmethod
     def load(cls) -> Config:
-        """Read env with family defaults; unset hook vars mean 'no embedding hook'."""
+        """Read env with family defaults; state stays colocated with the vault by default."""
         data_dir = _path_env("VAULT_DATA_DIR", "/vault")
-        index_dir = _path_env("VAULT_INDEX_DIR", str(data_dir / "index"))
-        state_dir = _path_env("VAULT_STATE_DIR", str(data_dir / "state"))
-        embed_url = os.environ.get("VAULT_EMBED_URL") or None
         return cls(
             api_token=os.environ.get("VAULT_API_TOKEN", ""),
             data_dir=data_dir,
-            index_dir=index_dir,
-            state_dir=state_dir,
-            embed_url=embed_url,
-            embed_api_token=os.environ.get("VAULT_EMBED_API_TOKEN") or None,
-            embed_model=os.environ.get("VAULT_EMBED_MODEL", "embeddinggemma"),
-            embed_dim=int(os.environ.get("VAULT_EMBED_DIM", "768")),
+            state_dir=_path_env("VAULT_STATE_DIR", str(data_dir / "state")),
             sync_mode=os.environ.get("VAULT_SYNC_MODE", "pull-only"),
             sync_timeout=int(os.environ.get("VAULT_SYNC_TIMEOUT", "1800")),
         )

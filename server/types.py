@@ -1,20 +1,8 @@
-"""Shared dataclasses for the vault server. Contract lives in the plan's Shared Interfaces; do not rename anything."""
+"""Shared dataclasses for the vault server. Contract lives in the plan; do not rename anything."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class NoteRow:
-    """One LanceDB row: a whole embedded note."""
-
-    id: str  # vault-relative path, e.g. "projects/idea.md"
-    vector: list[float]
-    text: str  # full raw note text (whole note)
-    frontmatter: dict  # parsed YAML frontmatter ({} when absent)
-    sha256: str
-    embedded_at: str  # ISO-8601 UTC
 
 
 @dataclass(frozen=True)
@@ -29,10 +17,9 @@ class EdgeRow:
 
 @dataclass
 class IndexResult:
-    """Outcome of one index pass."""
+    """Outcome of one link-graph pass."""
 
-    notes_embedded: int = 0
-    notes_removed: int = 0
+    notes_scanned: int = 0
     edges_upserted: int = 0
     skipped_reason: str | None = None
 
