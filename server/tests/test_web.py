@@ -108,6 +108,34 @@ class TestAdminSync:
         assert reply.status_code == 200
         assert reply.json() == {"ok": True, "mode": "pull-only", "detail": ""}
         assert booted.sync_stub.call_count == 1
+        assert booted.sync_stub.calls == [1800]  # cfg default
+
+    def test_timeout_knob_reaches_one_shot(self, tmp_path: Path) -> None:
+        """Config's sync_timeout arrives as one_shot's timeout arg (boot + admin both thread it)."""
+        class RecordingSync:
+            def __init__(self) -> None:
+                self.seen: list[int] = []
+
+            def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
+                self.seen.append(timeout_seconds)
+                return SyncResult(ok=True, mode="pull-only", detail="")
+
+        vault_dir = tmp_path / "vault"
+        state_dir = tmp_path / "state"
+        vault_dir.mkdir()
+        state_dir.mkdir()
+        cfg = Config(api_token="tok", data_dir=vault_dir, state_dir=state_dir, sync_timeout=99)
+        assert cfg.sync_timeout == 99
+        sync_stub = RecordingSync()
+        web.run_boot(cfg, sync_stub)
+        assert sync_stub.seen == [99]  # boot threads the knob
+        app = web.build_app(cfg, sync_stub)
+        from fastapi.testclient import TestClient
+
+        with TestClient(app) as client:
+            reply = client.post("/admin/sync", headers={"Authorization": "Bearer tok"})
+        assert reply.status_code == 200
+        assert sync_stub.seen == [99, 99]  # boot + admin call, both with the knob
 
     def test_failure_result_is_200_with_ok_false(self, boot_harness) -> None:
         harness = boot_harness(

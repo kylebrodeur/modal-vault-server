@@ -14,9 +14,8 @@ from typing import Any, ClassVar
 
 from server.config import Config
 from server.linker import build_edge_set, posixpath_norm, resolve_link
-from server.types import EdgeRow
+from server.types import LAST_SYNC_FILE, EdgeRow
 
-_LAST_SYNC_FILE = "last_sync.json"
 _DEFAULT_K = 8
 _UNBOUNDED_K = 1_000_000  # graph seeds need the full ranking, k slices it later
 _GRAPH_SEED_COUNT = 3
@@ -291,7 +290,7 @@ def sync_state(state_dir: Any, sync_mode: str) -> dict[str, Any]:
     """
     record: dict[str, Any] | None = None
     try:
-        raw = (state_dir / "last_sync.json").read_text(encoding="utf-8")
+        raw = (state_dir / LAST_SYNC_FILE).read_text(encoding="utf-8")
         parsed = json.loads(raw) if raw.strip() else None
         if isinstance(parsed, dict):
             record = parsed

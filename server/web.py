@@ -10,6 +10,7 @@ to `VaultTools.call`. The mount is guarded by a raw ASGI bearer gate covering
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -26,19 +27,25 @@ from starlette.types import ASGIApp
 
 from server import search_scan
 from server.config import Config
-from server.mcp_tools import VaultTools
-from server.mcp_tools import sync_state as mcp_tools_sync_state
+from server.mcp_tools import VaultTools, sync_state
 from server.sync_service import SyncService
-from server.types import SyncResult
-
-_LAST_SYNC_FILE = "last_sync.json"
+from server.types import LAST_SYNC_FILE, SyncResult
 
 _WWW_AUTHENTICATE = "Bearer"
 
 
 def _bearer_ok(header_value: str | None, token: str) -> bool:
-    """True only for the exact `Authorization: Bearer <token>` pair (None -> False)."""
-    return header_value == f"Bearer {token}"
+    """True only for the exact `Authorization: Bearer <token>` pair (None -> False).
+
+    THE one bearer comparison (admin route + ASGI guard both route through this);
+    timing-safe: length-independent compare, never an early-exit on the secret.
+    """
+    expected = f"Bearer {token}"
+    return (
+        header_value is not None
+        and len(header_value) == len(expected)
+        and hmac.compare_digest(header_value, expected)
+    )
 
 
 def _reject() -> JSONResponse:
@@ -48,8 +55,8 @@ def _reject() -> JSONResponse:
 class BearerGuard:
     """Raw ASGI bearer gate: non-matching Authorization gets a 401, everything else passes.
 
-    One exact acceptable value (`Bearer <token>`); header NAMES are ASCII case-insensitive
-    per RFC 7230, the value is compared byte-for-byte. Non-http scopes (lifespan) pass.
+    Same exact-bearer rule as /admin — both route through `_bearer_ok` (one
+    comparison in the codebase). Non-http scopes (lifespan) pass.
     """
 
     def __init__(self, app: ASGIApp, token: str) -> None:
@@ -61,14 +68,15 @@ class BearerGuard:
             await self._app(scope, receive, send)
             return
         headers = scope.get("headers") or []
+        authorization: str | None = None
         for key, value in headers:
             if key.lower() == b"authorization":
-                if value.decode("latin-1") == f"Bearer {self._token}":
-                    await self._app(scope, receive, send)
-                else:
-                    await self._reject(scope, receive, send)
-                return
-        await self._reject(scope, receive, send)
+                authorization = value.decode("latin-1")
+                break
+        if _bearer_ok(authorization, self._token):
+            await self._app(scope, receive, send)
+        else:
+            await self._reject(scope, receive, send)
 
     async def _reject(self, scope, receive, send) -> None:
         reject = JSONResponse(
@@ -122,7 +130,7 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
         """Bearer-gated one ob sync pull, off the event loop; SyncResult as JSON."""
         if not _bearer_ok(authorization, cfg.api_token):
             return _reject()
-        result = await asyncio.to_thread(sync.one_shot)
+        result = await asyncio.to_thread(sync.one_shot, cfg.sync_timeout)
         return JSONResponse({"ok": result.ok, "mode": result.mode, "detail": result.detail})
 
     app = FastAPI(
@@ -147,9 +155,9 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
 def web_health(cfg: Config) -> dict[str, Any]:
     """Health triage: {"status", "vault", "sync"}; degraded means vault missing or last sync not ok."""
     vault = _vault_exists(cfg.data_dir)
-    sync_state = _sync_state(cfg.state_dir, cfg.sync_mode)
-    degraded = (not vault) or (not sync_state["ok"])
-    return {"status": "degraded" if degraded else "ok", "vault": vault, "sync": sync_state}
+    sync_trio = sync_state(cfg.state_dir, cfg.sync_mode)
+    degraded = (not vault) or (not sync_trio["ok"])
+    return {"status": "degraded" if degraded else "ok", "vault": vault, "sync": sync_trio}
 
 
 def _vault_exists(data_dir: Path) -> bool:
@@ -157,11 +165,6 @@ def _vault_exists(data_dir: Path) -> bool:
         return data_dir.is_dir()
     except OSError:
         return False
-
-
-def _sync_state(state_dir: Path, sync_mode: str) -> dict[str, Any]:
-    """run_boot's watermark: {"mode","last_sync_at","ok"}; absent/corrupt file -> honest defaults."""
-    return mcp_tools_sync_state(state_dir, sync_mode)
 
 
 def run_boot(cfg: Config, sync: SyncService) -> dict[str, Any]:
@@ -183,7 +186,7 @@ def write_watermark(state_dir: Path, mode: str, last_sync_at: str) -> None:
     """Stamp last_sync.json with the sync trio; caller owns its timestamp string."""
     state_dir.mkdir(parents=True, exist_ok=True)
     payload = json.dumps({"mode": mode, "last_sync_at": last_sync_at, "ok": True})
-    (state_dir / _LAST_SYNC_FILE).write_text(payload, encoding="utf-8")
+    (state_dir / LAST_SYNC_FILE).write_text(payload, encoding="utf-8")
 
 
 def _now_iso() -> str:

@@ -31,3 +31,6 @@ class SyncResult:
     ok: bool
     mode: str  # "pull-only"
     detail: str  # "" on success, stderr excerpt on failure
+
+
+LAST_SYNC_FILE = "last_sync.json"  # the watermark's single shared name (mcp_tools reads it, web writes it)
