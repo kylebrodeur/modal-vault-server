@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -33,6 +34,20 @@ class TestConfigDefaults:
         cfg = Config.load()
         assert cfg.embed_api_token is None
 
+    def test_dir_defaults_derive_from_data_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VAULT_DATA_DIR", "/custom/vault")
+        monkeypatch.delenv("VAULT_INDEX_DIR", raising=False)
+        monkeypatch.delenv("VAULT_STATE_DIR", raising=False)
+        cfg = Config.load()
+        assert cfg.data_dir == Path("/custom/vault")
+        assert cfg.index_dir == Path("/custom/vault/index")
+        assert cfg.state_dir == Path("/custom/vault/state")
+
+    def test_api_token_defaults_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Missing VAULT_API_TOKEN does not raise at load; fail-closed-at-boot is app.py's job."""
+        monkeypatch.delenv("VAULT_API_TOKEN", raising=False)
+        assert Config.load().api_token == ""
+
 
 class TestConfigEnvOverrides:
     def test_all_env_overrides(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
@@ -63,6 +78,12 @@ class TestConfigEnvOverrides:
     def test_embed_url_set_round_trips(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VAULT_EMBED_URL", "http://localhost:9999/embed")
         assert Config.load().embed_url == "http://localhost:9999/embed"
+
+    def test_explicit_dir_override_wins_over_derivation(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VAULT_DATA_DIR", "/custom/vault")
+        monkeypatch.setenv("VAULT_STATE_DIR", "/elsewhere/state")
+        cfg = Config.load()
+        assert cfg.state_dir == Path("/elsewhere/state")
 
     def test_token_values_round_trip(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VAULT_API_TOKEN", "  secret-with-specials_#@$  ")

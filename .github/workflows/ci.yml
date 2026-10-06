@@ -19,4 +19,4 @@ jobs:
       - name: Run tests
         run: uv run --project server pytest server/tests -q
       - name: Run lint
-        run: uvx ruff@latest check server
+        run: uv run --project server ruff check server

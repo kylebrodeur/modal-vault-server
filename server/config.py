@@ -8,13 +8,9 @@ from pathlib import Path
 
 
 def _path_env(name: str, default: str) -> Path:
-    """Read a VAULT_* path knob; unset falls back to <data_dir default>/<leaf>."""
+    """Read a VAULT_* path knob; unset falls back to the given default path."""
     raw = os.environ.get(name)
-    if raw:
-        return Path(raw).expanduser()
-    leaf = default.split("/")[-1]
-    data_default = Path(os.environ.get("VAULT_DATA_DIR", "/vault"))
-    return data_default / leaf if name != "VAULT_DATA_DIR" else data_default
+    return Path(raw).expanduser() if raw else Path(default)
 
 
 @dataclass(frozen=True)
@@ -36,8 +32,8 @@ class Config:
     def load(cls) -> Config:
         """Read env with family defaults; unset hook vars mean 'no embedding hook'."""
         data_dir = _path_env("VAULT_DATA_DIR", "/vault")
-        index_dir = _path_env("VAULT_INDEX_DIR", "index")
-        state_dir = _path_env("VAULT_STATE_DIR", "state")
+        index_dir = _path_env("VAULT_INDEX_DIR", str(data_dir / "index"))
+        state_dir = _path_env("VAULT_STATE_DIR", str(data_dir / "state"))
         embed_url = os.environ.get("VAULT_EMBED_URL") or None
         return cls(
             api_token=os.environ.get("VAULT_API_TOKEN", ""),
