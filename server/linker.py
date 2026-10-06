@@ -26,13 +26,9 @@ def parse_links(text: str) -> list[str]:
     (embed forms ``![[...]]``/``![...](...)`` included). Skips ``http(s)://``,
     ``obsidian://``, any other scheme, bare anchors, and empty targets. Heading
     fragments stay in the target ("note#section" resolves to "note").
+    Percent-encodings are decoded (invalid-UTF-8 escapes degrade to U+FFFD, not a crash).
     """
-    targets: list[tuple[int, str]] = []
-    for match in _WIKILINK_RE.finditer(text):
-        targets.append((match.start(), unquote(match.group(1).split("|", 1)[0].strip(), errors="strict")))
-    for match in _MD_LINK_RE.finditer(text):
-        targets.append((match.start(), unquote(match.group(1).strip(), errors="strict")))
-    return [target for _, target in sorted(targets) if _is_internal(target)]
+    return [target for _, target in _scan_links(text)]
 
 
 def _is_internal(target: str) -> bool:
@@ -90,21 +86,27 @@ def resolve_link(target: str, names: dict[str, str]) -> str:
     stem = link.split("#", 1)[0]
     if not stem:
         return ""
-    before, sep, after = stem.rpartition(":")
-    if sep and after.isdigit():
-        stem = before
     return names.get(stem, "")
 
 
 def _scan_links(text: str) -> list[tuple[str, str]]:
-    """(whole-link text as written, target) pairs in document order."""
+    """(whole-link text as written, decoded target) pairs in document order.
+
+    Percent-encodings are decoded with ``errors="replace"``: invalid-UTF-8 escapes
+    (mojibake like ``bad%ffname.md``) degrade to U+FFFD instead of crashing the scan.
+    """
     pairs: list[tuple[int, str, str]] = []
     for match in _WIKILINK_RE.finditer(text):
-        pairs.append((match.start(), match.group(0), match.group(1).split("|", 1)[0].strip()))
+        pairs.append((match.start(), match.group(0), _decode(match.group(1).split("|", 1)[0].strip())))
     for match in _MD_LINK_RE.finditer(text):
-        pairs.append((match.start(), match.group(0), unquote(match.group(1).strip(), errors="strict")))
+        pairs.append((match.start(), match.group(0), _decode(match.group(1).strip())))
     pairs.sort(key=lambda entry: entry[0])
     return [(whole, target) for _, whole, target in pairs if _is_internal(target)]
+
+
+def _decode(raw: str) -> str:
+    """Percent-decode a link target; malformed or non-UTF-8 escapes degrade to U+FFFD."""
+    return unquote(raw, errors="replace")
 
 
 def build_edge_set(vault_dir: Path, note_paths: list[str]) -> list[EdgeRow]:
@@ -122,20 +124,23 @@ def build_edge_set(vault_dir: Path, note_paths: list[str]) -> list[EdgeRow]:
             continue
         try:
             text = note_path.read_text(encoding="utf-8")
+            # Whole per-note scan+resolve inside the guard: one poisoned note
+            # (unreadable, undecodable, or link scan blowing up) degrades to zero
+            # edges without crashing the vault-wide build.
+            pairs = _scan_links(text)
+            for whole, raw_target in pairs:
+                dst = resolve_link(raw_target, names)
+                if not dst and "/" in raw_target and not raw_target.startswith("/"):
+                    # Markdown relative links resolve against the src note's directory first.
+                    src_dir = posixpath.dirname(src.replace("\\", "/"))
+                    joined = posixpath.normpath(posixpath.join(src_dir, raw_target.replace("\\", "/")))
+                    lowered = joined.lower()
+                    if lowered.endswith(".md"):
+                        lowered = lowered[: -len(".md")]
+                    dst = names.get(lowered, "")
+                if dst == src:
+                    continue
+                edges.append(EdgeRow(src=src, dst=dst, kind=_KIND, raw=whole))
         except (OSError, UnicodeDecodeError):
             continue
-        # Single pass: whole-link text as written, target extracted for resolution.
-        for whole, raw_target in _scan_links(text):
-            dst = resolve_link(raw_target, names)
-            if not dst and "/" in raw_target and not raw_target.startswith("/"):
-                # Markdown relative links resolve against the src note's directory first.
-                src_dir = posixpath.dirname(src.replace("\\", "/"))
-                joined = posixpath.normpath(posixpath.join(src_dir, raw_target.replace("\\", "/")))
-                lowered = joined.lower()
-                if lowered.endswith(".md"):
-                    lowered = lowered[: -len(".md")]
-                dst = names.get(lowered, "")
-            if dst == src:
-                continue
-            edges.append(EdgeRow(src=src, dst=dst, kind=_KIND, raw=whole))
     return edges

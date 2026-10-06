@@ -1,4 +1,7 @@
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from server.linker import build_edge_set, parse_links
 from server.types import EdgeRow
@@ -104,3 +107,62 @@ class TestBuildEdgeSet:
 
     def test_empty_note_paths(self, tmp_path: Path) -> None:
         assert build_edge_set(tmp_path, []) == []
+
+
+class TestFixRound1:
+    """Fix-round 1 coverage: decode robustness, decode consistency, poisoned-note isolation."""
+
+    def test_percent_invalid_utf8_escape_does_not_crash_scan(self) -> None:
+        """`bad%ffname.md` (mojibake escape) degrades to U+FFFD instead of UnicodeDecodeError."""
+        targets = parse_links("[link](bad%ffname.md)")
+        assert targets == ["bad\ufffdname.md"]
+
+    def test_wikilink_and_md_link_targets_decode_identically(self) -> None:
+        """parse_links and build_edge_set agree on [[my%20note]] → 'my note' (single decode path)."""
+        text = "see [[my%20note]] twice [alt](my%20note.md)"
+        # Raw targets keep their extension if written; decoding is identical in both forms.
+        assert parse_links(text) == ["my note", "my note.md"]
+
+    def test_decode_consistency_between_parse_links_and_edges(self, tmp_path: Path) -> None:
+        _write_vault(tmp_path, {"my note.md": "content\n", "host.md": "link [[my%20note]]\n"})
+        edges = build_edge_set(tmp_path, ["my note.md", "host.md"])
+        assert len(edges) == 1
+        assert edges[0].dst == "my note.md"
+        # parse_links on the same note text resolves to the same decoded target.
+        assert parse_links("[[my%20note]]") == ["my note"]
+
+    def test_percent_invalid_note_degrades_to_dangling_without_raising(self, tmp_path: Path) -> None:
+        """Note with a mojibake-escaped link builds normally; the link itself dangles.
+
+        Documented choice: `raw` preserves the escape AS WRITTEN (`bad%ffname.md`);
+        the decoded (U+FFFD) form is only used for resolution/danging-decision.
+        """
+        _write_vault(tmp_path, {"a.md": "real [[b]] mojibake [x](bad%ffname.md)\n", "b.md": "plain\n"})
+        edges = build_edge_set(tmp_path, ["a.md", "b.md"])
+        assert [(edge.src, edge.dst, edge.raw) for edge in edges] == [
+            ("a.md", "b.md", "[[b]]"),
+            ("a.md", "", "[x](bad%ffname.md)"),
+        ]
+
+    def test_unreadable_note_degrades_without_blocking_others(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A poisoned read_text on one note yields zero edges for it; siblings still build."""
+
+        def poisoned_read(self: Any, *args: Any, **kwargs: Any) -> str:
+            if self.name == "bad.md":
+                raise OSError(5, "Simulated EIO")
+            return original_read_text(self, *args, **kwargs)
+
+        original_read_text = Path.read_text
+        _write_vault(
+            tmp_path,
+            {"bad.md": "[[ghost]]\n", "good.md": "- [[target]]\n- [[good]] self\n", "target.md": "plain\n"},
+        )
+        monkeypatch.setattr(Path, "read_text", poisoned_read)
+        edges = build_edge_set(tmp_path, ["bad.md", "good.md", "target.md"])
+        # bad.md yields nothing (poisoned); good.md's resolvable target edge and
+        # its own self-link (skipped) behave exactly as in the healthy path.
+        assert [(edge.src, edge.dst, edge.raw) for edge in edges] == [
+            ("good.md", "target.md", "[[target]]"),
+        ]
