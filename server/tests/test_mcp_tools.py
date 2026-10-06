@@ -240,3 +240,27 @@ class TestDispatch:
     async def test_none_arguments_tolerated(self, vault: Path) -> None:
         out = await _tools(vault).call("vault.status", None)
         assert out["notes"] == 4
+
+    async def test_unanticipated_exception_degrades_to_error_dict(self, vault: Path) -> None:
+        # Blanket chokepoint: a handler that raises still yields a plain error
+        # dict (exception TYPE name only, detail capped, never a stack trace).
+        # The search seam is `search.scan_vault(data_dir, query, k, prefix)`,
+        # so the stub is an object whose scan_vault raises.
+        cfg = Config(api_token="t", data_dir=vault, state_dir=vault / "state")
+
+        class ExplodingSearch:
+            # Plain sync callable matching the scan_vault seam; raising here
+            # exercises the blanket chokepoint in call().
+            def scan_vault(self, data_dir: object, query: str, k: int = 8, prefix: str = "") -> list:
+                raise RuntimeError("boom " + "x" * 600)
+
+        tools = VaultTools(
+            cfg=cfg,
+            search=ExplodingSearch(),
+            sync=SyncService(workspace_dir=vault, state_dir=vault / "state"),
+        )
+        out = await tools.call("vault.search", {"query": "alpha"})
+        assert out["error"] == "RuntimeError"
+        assert out["detail"] == ("boom " + "x" * 600)[:500]
+        assert len(out) == 2
+        assert not any(key in out for key in ("traceback", "stack", "frames"))

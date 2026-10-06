@@ -6,9 +6,6 @@ description = "Hosted vault + MCP memory plane: server-side Obsidian clone with 
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "fastapi[standard]>=0.115",
-    "lancedb>=0.16",
-    "pyarrow>=17",
-    "httpx>=0.27,<1",
     "mcp>=1.0",
     "modal>=0.64",
     "pyyaml>=6",
@@ -43,4 +40,4 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
 asyncio_mode = "auto"
 minversion = "8.0"
 addopts = "-q"
-testpaths = ["server/tests"]
+testpaths = ["tests"]

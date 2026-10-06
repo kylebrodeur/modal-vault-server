@@ -35,7 +35,7 @@ modal secret create modal-vault-secret VAULT_API_TOKEN=<choose-a-long-random-tok
 uvx modal deploy server/app.py
 ```
 
-Deploy prints the web URL, e.g. `https://<workspace>--modal-vault-server.modal.run`.
+Deploy prints the web URL, e.g. `https://<workspace>--modal-vault-server-serve.modal.run`.
 
 MCP client config sample (streamable HTTP):
 
@@ -44,7 +44,7 @@ MCP client config sample (streamable HTTP):
   "mcpServers": {
     "modal-vault": {
       "type": "http",
-      "url": "https://<workspace>--modal-vault-server.modal.run/mcp",
+      "url": "https://<workspace>--modal-vault-server-serve.modal.run/mcp",
       "headers": {
         "Authorization": "Bearer <VAULT_API_TOKEN>"
       }

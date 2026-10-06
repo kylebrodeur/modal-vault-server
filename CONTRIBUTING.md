@@ -5,9 +5,9 @@ Thanks for your interest in contributing. This project is extracted from product
 ## Ground Rules
 
 - **Keep it boring.** Prefer straightforward code over clever abstractions. This is a utility, not a framework.
-- **No new heavyweight deps** unless absolutely required for the sync or index path. The local test env must stay fast to `uv sync`.
+- **No new heavyweight deps** unless absolutely required for the sync path. The local test env must stay fast to `uv sync`.
 - **Env prefixes** follow `VAULT_*`. Never reintroduce project-specific branding.
-- **Amortized commits.** Store mutations buffer and land in one LanceDB commit per index pass; do not introduce per-row commits.
+- **No index in this repo.** The clone is the source of truth: keyword search scans live, graph walks live. Do not introduce vector/index machinery (that door belongs to modal-embedding-server).
 - **Fail-closed serving.** Boot failures must leave `/mcp` and `/health` serving last-good state; never crash the read path on sync errors.
 - **No AI slop.** Comments and docs should describe *why* the code exists, not restate what it does.
 

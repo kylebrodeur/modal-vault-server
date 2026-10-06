@@ -79,9 +79,7 @@ class BearerGuard:
             await self._reject(scope, receive, send)
 
     async def _reject(self, scope, receive, send) -> None:
-        reject = JSONResponse(
-            {"detail": "unauthorized"}, status_code=401, headers={"WWW-Authenticate": _WWW_AUTHENTICATE}
-        )
+        reject = _reject()
         await reject(scope, receive, send)
 
 

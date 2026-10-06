@@ -141,8 +141,20 @@ class VaultTools:
         self._sync = sync  # SyncService: accepted per plan; slice 1 status reads the watermark file
 
     async def call(self, name: str, arguments: dict | None = None) -> dict:
-        """Dispatch by tool name; every path returns a dict (errors degrade honestly)."""
+        """Dispatch by tool name; every path returns a dict (errors degrade honestly).
+
+        Blanket chokepoint: any unanticipated exception still degrades to a
+        plain `{"error", "detail"}` dict (type name only, detail tail 500 chars,
+        never a stack trace); the narrow per-tool degradations below stay
+        untouched and take precedence.
+        """
         arguments = arguments if arguments is not None else {}
+        try:
+            return await self._dispatch(name, arguments)
+        except Exception as exc:
+            return {"error": type(exc).__name__, "detail": str(exc)[:500]}
+
+    async def _dispatch(self, name: str, arguments: dict) -> dict:
         if name == "vault.search":
             return await self._search_tool(arguments)
         if name == "vault.read":
