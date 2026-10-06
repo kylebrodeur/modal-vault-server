@@ -90,13 +90,14 @@ class TestOneShot:
     def test_timeout_degrades_to_failed_result_not_exception(
         self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # subprocess.run(timeout=) kills the child; captured stderr is None/empty on
-        # TimeoutExpired, so detail is "" here — the contract is degrade, not diagnostic text.
+        # TimeoutExpired.stderr arrives as raw bytes on POSIX (bpo-43431, text decoding
+        # skipped on the kill path); the service decodes it — detail shows the shim's
+        # pre-hang stderr line, never loses it to an isinstance(str) check.
         monkeypatch.setenv("OB_FAKE_MODE", "hang")
         result = ob_env.service.one_shot(timeout_seconds=1)
         assert result.ok is False
         assert result.mode == "pull-only"
-        assert result.detail == ""
+        assert "HUNG-STDERR-LINE" in result.detail
 
 
 class TestSerialization:

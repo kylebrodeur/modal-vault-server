@@ -17,6 +17,16 @@ from server.types import SyncResult
 _STDERR_TAIL_CHARS = 500  # failure detail: last 500 chars of stderr, enough to diagnose
 
 
+def _stderr_text(stderr: str | bytes | None) -> str:
+    """Stderr as text. TimeoutExpired carries raw BYTES on POSIX (bpo-43431: text decoding
+    is skipped on the timeout kill path), so decode with replacement before use."""
+    if stderr is None:
+        return ""
+    if isinstance(stderr, bytes):
+        return stderr.decode(errors="replace")
+    return stderr
+
+
 class SyncService:
     """Pull-sync lifecycle for the Headless Sync clone (whoami / login / one-shot pull)."""
 
@@ -42,22 +52,15 @@ class SyncService:
     def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
         """One `ob sync --mode pull-only` pull; failures degrade to a SyncResult (never raises)."""
         with self._lock:
-            argv = [self._ob_bin, "sync", "--mode", "pull-only"]
             try:
-                proc = subprocess.run(
-                    argv,
-                    cwd=self._workspace_dir,
-                    env=self._env(),
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout_seconds,
+                proc = self._run(
+                    [self._ob_bin, "sync", "--mode", "pull-only"], timeout_seconds=timeout_seconds
                 )
             except subprocess.TimeoutExpired as exc:
-                stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-                return SyncResult(ok=False, mode="pull-only", detail=stderr[-_STDERR_TAIL_CHARS:])
+                return SyncResult(ok=False, mode="pull-only", detail=_stderr_text(exc.stderr)[-_STDERR_TAIL_CHARS:])
             if proc.returncode == 0:
                 return SyncResult(ok=True, mode="pull-only", detail="")
-            return SyncResult(ok=False, mode="pull-only", detail=proc.stderr[-_STDERR_TAIL_CHARS:])
+            return SyncResult(ok=False, mode="pull-only", detail=_stderr_text(proc.stderr)[-_STDERR_TAIL_CHARS:])
 
     # -- internals -------------------------------------------------------------
 
@@ -72,7 +75,13 @@ class SyncService:
         argv: list[str],
         input: str | None = None,
         check: bool = False,
+        timeout_seconds: int | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        """Single subprocess seam: capture always, text always, optional timeout.
+
+        Raises TimeoutExpired when the timeout fires (caller decides degrade); raises
+        CalledProcessError on nonzero exit only when check=True.
+        """
         proc = subprocess.run(
             argv,
             cwd=self._workspace_dir,
@@ -80,6 +89,7 @@ class SyncService:
             input=input,
             capture_output=True,
             text=True,
+            timeout=timeout_seconds,
         )
         if check and proc.returncode != 0:
             raise subprocess.CalledProcessError(proc.returncode, argv, output=proc.stdout, stderr=proc.stderr)
