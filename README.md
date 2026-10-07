@@ -30,10 +30,15 @@ Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade
 ```bash
 modal setup  # one-time: authenticate with Modal
 
-modal secret create modal-vault-secret VAULT_API_TOKEN=<choose-a-long-random-token>
+mtk secrets check
+mtk secrets create --pkg vault
+
+modal secret create modal-vault-secret VAULT_API_TOKEN=$(openssl rand -hex 32)
 
 uvx modal deploy server/app.py
 ```
+
+`server/secrets.toml` is the source of truth for secret names and keys.
 
 Deploy prints the web URL, e.g. `https://<workspace>--modal-vault-server-serve.modal.run`.
 
