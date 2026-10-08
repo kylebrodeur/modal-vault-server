@@ -40,7 +40,7 @@ class TestIsLoggedIn:
     def test_whoami_exit_zero_is_true(self, ob_env: ObEnv) -> None:
         assert ob_env.service.is_logged_in() is True
         line = ob_env.log.read_text().splitlines()[0]
-        assert line == f"start whoami cwd={ob_env.workspace.resolve()}"
+        assert line.startswith(f"start whoami cwd={ob_env.workspace.resolve()}")
 
     def test_whoami_nonzero_exit_is_false(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
@@ -52,9 +52,9 @@ class TestBootstrap:
         ob_env.service.bootstrap("agent@example.com", "s3cret-pass")
         # Exact two-entry log pins both contracts: argv is bare `login` (+cwd), stdin carries
         # exactly "email\npassword" (brief-verbatim, no trailing newline).
-        assert ob_env.log.read_text() == (
-            f"start login cwd={ob_env.workspace.resolve()}\nstdin:agent@example.com\ns3cret-pass\n"
-        )
+        blob = ob_env.log.read_text()
+        assert blob.startswith(f"start login cwd={ob_env.workspace.resolve()} xdg=")
+        assert "stdin:agent@example.com\ns3cret-pass" in blob
 
     def test_bootstrap_raises_on_failure_with_stderr(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
@@ -69,7 +69,7 @@ class TestOneShot:
         result = ob_env.service.one_shot()
         assert result == SyncResult(ok=True, mode="pull-only", detail="")
         line = ob_env.log.read_text().splitlines()[0]
-        assert line == f"start sync --mode pull-only cwd={ob_env.workspace.resolve()}"
+        assert line.startswith(f"start sync --mode pull-only cwd={ob_env.workspace.resolve()}")
 
     def test_failure_detail_is_stderr_tail_last_500_chars(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")

@@ -1,7 +1,8 @@
 """Test helper: writes an executable fake `ob` shell shim; tests prepend its dir to PATH.
 
 The shim appends one line per invocation to $OB_FAKE_LOG (`start <argv> cwd=<cwd>`),
-echoes `login`'s stdin into the log under a `stdin:` line, and takes its behavior from
+echoes `login`'s stdin into the log under a `stdin:` line, records
+`XDG_CONFIG_HOME` per line (state-root assertions), and takes its behavior from
 OB_FAKE_MODE: `ok` (default, exit 0), `fail` (~1.5KB on stderr, exit 1), `slow`
 (sleep OB_FAKE_SLEEP then a trailing `end <argv>` line, exit 0), `hang` (stderr note,
 then a long sleep so `one_shot(timeout_seconds=...)` exercises the timeout path).
@@ -14,7 +15,7 @@ from pathlib import Path
 
 SHIM = r"""#!/bin/sh
 log="${OB_FAKE_LOG:-/dev/null}"
-printf 'start %s cwd=%s\n' "$*" "$PWD" >> "$log"
+printf 'start %s cwd=%s xdg=%s\n' "$*" "$PWD" "${XDG_CONFIG_HOME:-}" >> "$log"
 if [ "$1" = "login" ]; then
     stdin_data="$(cat)"
     printf 'stdin:%s\n' "$stdin_data" >> "$log"

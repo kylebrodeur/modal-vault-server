@@ -90,7 +90,7 @@ Every knob uses the `VAULT_` prefix and is read from env inside the container (t
 |----------|-------------|---------|
 | `VAULT_API_TOKEN` | Bearer token gating `/mcp` and `/admin/*`; required, never empty in serving | unset (refuses to serve) |
 | `VAULT_DATA_DIR` | Vault clone root | `/vault` |
-| `VAULT_STATE_DIR` | `ob` login state + sync watermark | `<data_dir>/state` |
+| `VAULT_STATE_DIR` | `ob` login state root (set as `XDG_CONFIG_HOME`; obsidian-headless reads `$XDG_CONFIG_HOME/obsidian-headless`, not `OB_STATE`) + sync watermark | `<data_dir>/state` |
 | `VAULT_SYNC_MODE` | Sync direction for the `ob` pull | `pull-only` |
 | `VAULT_SYNC_TIMEOUT` | Seconds before a one-shot pull times out | `1800` |
 | `VAULT_OB_EMAIL` / `VAULT_OB_PASSWORD` | Optional first-boot `ob login` credentials (in the Secret); absent = no bootstrap, degraded until state arrives | unset |

@@ -68,7 +68,16 @@ class SyncService:
         own processes.
         """
         with self._lock:
-            argv = [self._ob_bin, "sync-setup", "--vault", vault_name, "--device-name", device_name]
+            argv = [
+                self._ob_bin,
+                "sync-setup",
+                "--vault",
+                vault_name,
+                "--path",
+                str(self._workspace_dir),
+                "--device-name",
+                device_name,
+            ]
             if e2e_password:
                 argv += ["--password", e2e_password]
             self._run(argv, input="\n", check=True)
@@ -87,9 +96,17 @@ class SyncService:
     # -- internals -------------------------------------------------------------
 
     def _env(self) -> dict[str, str]:
-        """Inherited env plus OB_STATE so `ob` finds login state outside the clone."""
+        """Inherited env plus the state-dir wiring `ob` actually reads.
+
+        obsidian-headless does NOT read `OB_STATE`: its state root is
+        `$XDG_CONFIG_HOME/obsidian-headless` (Linux XDG default
+        `~/.config`), so the Volume-backed persistence comes from pointing
+        `XDG_CONFIG_HOME` at the state dir. `OB_STATE` stays set for
+        forward-compat (harmless; the binary ignores it).
+        """
         env = dict(os.environ)
         env["OB_STATE"] = str(self._state_dir)
+        env["XDG_CONFIG_HOME"] = str(self._state_dir)
         return env
 
     def _run(
