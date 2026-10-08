@@ -11,7 +11,7 @@
 
 **Do not open a public issue for a security vulnerability.**
 
-Use GitHub's **Private Vulnerability Reporting** (GitHub private security advisory) to reach the maintainer:
+Use GitHub's **Private Vulnerability Reporting** to reach the maintainer:
 
 1. Go to the **Security** tab in this repository.
 2. Click **"Report a vulnerability."**
