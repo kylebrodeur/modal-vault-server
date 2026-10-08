@@ -74,13 +74,22 @@ The bearer gate covers `/mcp` and `/admin/*`; an empty `VAULT_API_TOKEN` refuses
 
 Without login state, the server runs and reports degraded honestly. To
 make the FIRST deploy self-provisioning, add `ob` credentials to the
-same Secret; boot then runs `ob login` (MFA only when configured),
-optionally `ob sync-setup` (vault linking, e2e password only for
-e2e-encrypted vaults), and pulls - PVM headless-sync's proven phase
-order (auth before sync), applied generically. Credentials are read
-from env at boot only: never logged, never echoed, never written
-outside the process. Failures degrade to the old honest posture with a
-`boot.json` note (failure TYPE only, no values).
+same Secret; boot then runs the proven sequence - `ob login`
+(argv-flag form; stdin login silently persists nothing outside a TTY),
+optionally `ob sync-setup --path <clone>` for vault linking (e2e
+password only for e2e-encrypted vaults), then
+`ob sync-config --mode pull-only` (setup defaults to bidirectional;
+this makes the pull-only mode durable so the server clone can never
+push), then the bare `ob sync --path` pull.
+
+Binary-contract notes (verified against `obsidian-headless` 0.0.12/0.0.14):
+there is no `whoami` (login-state check = the
+`<state>/obsidian-headless/auth_token` file); `ob sync` takes only
+`--path`/`--continuous` - `--mode` belongs to `sync-config` only; the
+only state knob is `XDG_CONFIG_HOME` (`OB_STATE` is inert). Credentials
+ride argv, accepted inside a single-tenant container. Failures degrade
+to the old honest posture with a `boot.json` note (failure TYPE only,
+no values).
 
 ## Configuration
 

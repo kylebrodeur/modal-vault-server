@@ -1,6 +1,7 @@
-"""First-boot bootstrap-from-secret contracts (the PVM headless-sync learnings,
-applied generically): login -> optional sync-setup -> pull, credential-honest
-failure modes, and the run_boot shape change.
+"""First-boot bootstrap-from-secret contracts (the PVM headless-sync
+learnings, corrected by the real-binary deploy findings of 2026-10-08):
+argv-flag login (stdin login silently no-ops), state-dir pre-creation,
+and the pull is a BARE `sync --path` (never `--mode`).
 
 Every test drives the fake `ob` shim; no network, no real credentials.
 """
@@ -33,11 +34,9 @@ def boot_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> BootEnv:
     workspace = tmp_path / "workspace"
     state = tmp_path / "state"
     workspace.mkdir()
-    state.mkdir()
     log = tmp_path / "ob.log"
     monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ.get('PATH', '')}")
     monkeypatch.setenv("OB_FAKE_LOG", str(log))
-    monkeypatch.setenv("OB_FAKE_WHOAMI", "1")  # fresh clone: whoami exits 1 (not logged in)
     monkeypatch.setenv("VAULT_DATA_DIR", str(workspace))
     monkeypatch.setenv("VAULT_STATE_DIR", str(state))
     monkeypatch.delenv("VAULT_OB_EMAIL", raising=False)
@@ -59,49 +58,83 @@ def _cfg(env: BootEnv, monkeypatch: pytest.MonkeyPatch, **overrides: str) -> Con
         else:
             monkeypatch.delenv(env_name, raising=False)
     for key, value in overrides.items():
-        env_name = "VAULT_OB_" + key.upper()
-        monkeypatch.delenv(env_name, raising=False) if not value else monkeypatch.setenv(env_name, value)
+        env_name = {"e2e_password": "VAULT_OB_E2E_PASSWORD", "mfa": "VAULT_OB_MFA"}.get(key, "VAULT_OB_" + key.upper())
+        if value:
+            monkeypatch.setenv(env_name, value)
+        else:
+            monkeypatch.delenv(env_name, raising=False)
     return Config.load()
 
 
 class TestFirstBootBootstrap:
-    def test_login_then_link_then_pull_order(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_login_links_configs_then_bare_pull_in_order(
+        self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The proven order: login -> sync-setup -> sync-config pull-only -> bare pull."""
         cfg = _cfg(boot_env, monkeypatch, vault="MyVault", e2e_password="secret-e2e")
         entry = run_boot(cfg, boot_env.sync)
-        lines = boot_env.log.read_text().splitlines()
-        starts = [line for line in lines if line.startswith("start")]
-        assert starts[0].startswith("start whoami")
-        assert starts[1].startswith("start login")
-        assert starts[2].startswith("start sync-setup --vault MyVault")
-        assert starts[3].startswith("start sync --mode pull-only")
+        starts = [line for line in boot_env.log.read_text().splitlines() if line.startswith("start")]
+        heads = [line.split(" cwd=")[0] for line in starts]
+        setup_expected = (
+            f"start sync-setup --vault MyVault --path {boot_env.workspace}"
+            " --device-name modal-vault-server --password secret-e2e"
+        )
+        assert heads == [
+            "start login --email kyle@example.com --password hunter2",
+            setup_expected,
+            f"start sync-config --mode pull-only --path {boot_env.workspace}",
+            f"start sync --path {boot_env.workspace}",
+        ]
         assert entry["bootstrapped"] is True
         assert entry["sync"].ok is True
+        # the login PERSISTED a token (file-based state on the state dir)
+        assert boot_env.sync.token_file().is_file()
 
-    def test_mfa_flows_into_login_stdin_not_argv(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_mfa_rides_argv_when_set(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         cfg = _cfg(boot_env, monkeypatch, mfa="123456")
         run_boot(cfg, boot_env.sync)
         log = boot_env.log.read_text()
-        assert "stdin:kyle@example.com\nhunter2\n123456" in log
-        # the MFA code must never appear in argv
         login_line = next(line for line in log.splitlines() if line.startswith("start login"))
-        assert "123456" not in login_line
+        assert "--mfa 123456" in login_line
 
-    def test_e2e_password_flows_via_stdin_to_sync_setup(
-        self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_mfa_omits_the_flag(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = _cfg(boot_env, monkeypatch, mfa="")
+        run_boot(cfg, boot_env.sync)
+        login_line = next(line for line in boot_env.log.read_text().splitlines() if line.startswith("start login"))
+        assert "--mfa" not in login_line
+
+    def test_e2e_password_rides_sync_setup_argv(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         cfg = _cfg(boot_env, monkeypatch, vault="Encrypted", e2e_password="e2e-secret")
         run_boot(cfg, boot_env.sync)
         setup_line = next(line for line in boot_env.log.read_text().splitlines() if line.startswith("start sync-setup"))
-        assert "--password e2e-secret" in setup_line  # the proven PVM contract: argv inside a container
-        assert boot_env.workspace.name  # (no-op guard so the next assertion reads clearly)
-        # email/password never leak into the setup line
-        assert "hunter2" not in setup_line
+        assert "--password e2e-secret" in setup_line
+        assert "hunter2" not in setup_line  # the LOGIN password never leaks here
 
-    def test_no_e2e_password_omits_password_flag(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
-        cfg = _cfg(boot_env, monkeypatch, vault="Plain", e2e_password="")
-        run_boot(cfg, boot_env.sync)
-        setup_line = next(line for line in boot_env.log.read_text().splitlines() if line.startswith("start sync-setup"))
+    def test_standard_vault_setup_then_pull_only_config(
+        self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Standard vaults: no --password on setup; pull-only mode is CONFIGURED after it."""
+        cfg = _cfg(boot_env, monkeypatch, vault="Plain", e2e_password="")  # standard vault
+        entry = run_boot(cfg, boot_env.sync)
+        log = boot_env.log.read_text()
+        setup_line = next(line for line in log.splitlines() if line.startswith("start sync-setup"))
         assert "--password" not in setup_line
+        assert "configured:pull-only" in log  # the durable mode setting
+        assert entry["sync"].ok is True
+
+    def test_never_passes_mode_flag_on_sync(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = _cfg(boot_env, monkeypatch)
+        entry = run_boot(cfg, boot_env.sync)
+        sync_lines = [line for line in boot_env.log.read_text().splitlines() if line.startswith("start sync ")]
+        assert all("--mode" not in line for line in sync_lines)  # invalid on the real binary
+        assert entry["sync"].ok is True
+
+    def test_state_dir_pre_created_before_login(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+        cfg = _cfg(boot_env, monkeypatch)
+        run_boot(cfg, boot_env.sync)
+        # the shim persists the token UNDER xdg (which is the state dir): ob only
+        # creates its own subdir - the state dir itself must have existed already
+        assert (boot_env.state / "obsidian-headless" / "auth_token").is_file()
 
     def test_missing_credentials_skips_login_pull_anyway(
         self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch
@@ -111,15 +144,14 @@ class TestFirstBootBootstrap:
         entry = run_boot(cfg, boot_env.sync)
         log = boot_env.log.read_text()
         assert "start login" not in log
-        assert "start sync --mode pull-only" in log
+        assert "start sync --path" in log
         assert entry["bootstrapped"] is False
 
     def test_already_logged_in_skips_login(self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OB_FAKE_WHOAMI", "")  # whoami exits 0: state already present
-        cfg = _cfg(boot_env, monkeypatch)
-        run_boot(cfg, boot_env.sync)  # first boot logs in
+        _cfg(boot_env, monkeypatch)
+        run_boot(_cfg(boot_env, monkeypatch), boot_env.sync)  # first boot logs in
         boot_env.log.write_text("")
-        entry = run_boot(cfg, boot_env.sync)  # second boot: whoami ok -> no login
+        entry = run_boot(_cfg(boot_env, monkeypatch), boot_env.sync)  # second boot: token exists -> no login
         log = boot_env.log.read_text()
         assert "start login" not in log
         assert entry["bootstrapped"] is False
@@ -135,7 +167,6 @@ class TestFirstBootBootstrap:
         note = json.loads((boot_env.state / "boot.json").read_text())
         assert note["event"] == "bootstrap_failed"
         assert "CalledProcessError" in note["detail"]
-        # the note NEVER carries credential values
         blob = (boot_env.state / "boot.json").read_text()
         assert "hunter2" not in blob and "kyle@example.com" not in blob
 
@@ -145,6 +176,7 @@ class TestFirstBootBootstrap:
         log = boot_env.log.read_text()
         assert "start login" in log
         assert "sync-setup" not in log
+        assert "sync-config" not in log
 
 
 class TestConfigKnobs:

@@ -1,6 +1,6 @@
 [project]
 name = "modal-vault-server"
-version = "1.0.0"
+version = "1.0.1"
 description = "Hosted vault + MCP memory plane: server-side Obsidian clone with a searchable projection agents reach over MCP"
 
 requires-python = ">=3.11,<3.13"

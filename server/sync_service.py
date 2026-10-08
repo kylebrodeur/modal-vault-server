@@ -1,8 +1,28 @@
 """`ob` CLI orchestration for the vault clone.
 
-Every invocation is serialized with a process-wide lock: `ob` holds a workspace lock on
-the clone directory, so concurrent `ob sync` processes would fight over it. Credentials
-for `ob login` travel via stdin only — never argv (visible in `ps`) and never log output.
+Contracts verified against the real `obsidian-headless` binary (0.0.12 /
+0.0.14, verified live by the writing-duo deploy) - three of them are the
+opposite of what the TTY-era docs suggest:
+
+- `ob whoami` does not exist: login state is present iff the token file
+  `$XDG_CONFIG_HOME/obsidian-headless/auth_token` exists.
+- `ob sync` takes only `--path` / `--continuous`: `--mode pull-only` is
+  INVALID on `sync`. Pull-only is a CONFIGURATION
+  (`ob sync-config --mode pull-only --path <dir>`), persisted in the
+  sync config; the pull itself is a bare `ob sync --path <dir>`.
+- `ob login` reads ARGV flags (`--email/--password`, `--mfa` when set):
+  stdin-piped login exits 0 but silently persists nothing in a
+  container. Argv credentials are accepted inside a single-tenant
+  container (`ps` is only visible to that container's own processes).
+- `XDG_CONFIG_HOME` is the only state knob (`OB_STATE` is inert); the
+  state dir must EXIST before any `ob` run (ob creates only its own
+  subdir under an existing XDG root, never the parent).
+- `sync-setup` defaults to BIDIRECTIONAL: this service always follows it
+  with `sync-config --mode pull-only` (the server never pushes).
+
+Every invocation is serialized with a process-wide lock: `ob` holds a
+workspace lock on the clone directory, so concurrent `ob` processes
+would fight over it.
 """
 
 from __future__ import annotations
@@ -15,6 +35,8 @@ from pathlib import Path
 from server.types import SyncResult
 
 _STDERR_TAIL_CHARS = 500  # failure detail: last 500 chars of stderr, enough to diagnose
+_STATE_SUBDIR = "obsidian-headless"  # ob's own subdir under XDG_CONFIG_HOME
+_TOKEN_FILE = "auth_token"
 
 
 def _stderr_text(stderr: str | bytes | None) -> str:
@@ -28,7 +50,7 @@ def _stderr_text(stderr: str | bytes | None) -> str:
 
 
 class SyncService:
-    """Pull-sync lifecycle for the Headless Sync clone (whoami / login / one-shot pull)."""
+    """Pull-sync lifecycle for the Headless Sync clone (state check / login / link / pull)."""
 
     def __init__(self, workspace_dir: Path, state_dir: Path, ob_bin: str = "ob") -> None:
         self._workspace_dir = workspace_dir
@@ -39,35 +61,40 @@ class SyncService:
     # -- public API ------------------------------------------------------------
 
     def is_logged_in(self) -> bool:
-        """True when `ob whoami` exits 0 (login state lives in state_dir)."""
-        with self._lock:
-            proc = self._run([self._ob_bin, "whoami"])
-            return proc.returncode == 0
+        """True when ob's token file exists under the XDG state root.
+
+        No subprocess: the file check IS the login-state truth (the real
+        binary has no `whoami`; a shell-out would just re-read the file).
+        """
+        return self.token_file().is_file()
 
     def bootstrap(self, email: str, password: str, mfa: str = "") -> None:
         """Run `ob login` for first-boot provisioning; raises CalledProcessError on failure.
 
-        Credentials travel via stdin only (never argv, never logs): email then
-        password on separate lines, then the MFA code when the account has MFA.
+        Credentials ride argv flags - the form the real binary actually
+        honors (stdin-piped login exits 0 but silently persists nothing
+        outside a TTY). Accepted inside a single-tenant container: `ps` is
+        only visible to that container's own processes, and the flag form
+        is what the proven integration path uses.
         """
         with self._lock:
-            payload = f"{email}\n{password}" + (f"\n{mfa}" if mfa else "")
-            argv = [self._ob_bin, "login"] + (["--mfa"] if mfa else [])
-            self._run(argv, input=payload, check=True)
+            self._ensure_state_dir()
+            argv = [self._ob_bin, "login", "--email", email, "--password", password]
+            if mfa:
+                argv += ["--mfa", mfa]
+            self._run(argv, check=True)
 
     def link_vault(self, vault_name: str, e2e_password: str = "", device_name: str = "modal-vault-server") -> None:
         """Run `ob sync-setup` once after login; raises CalledProcessError on failure.
 
         Associates this clone/state pair with the named Obsidian Sync vault.
-        `e2e_password` is the vault's end-to-end encryption password: pass it
-        only for e2e-encrypted vaults. It rides `--password` on argv (the
-        same trade-off the headless-sync worker proved against the real
-        binary; `ob` does not document stdin prompting for sync-setup, and
-        a silent no-op would strand e2e vaults) - acceptable inside a
-        single-tenant container, where `ps` shows only that container's
-        own processes.
+        `e2e_password` rides `--password` when the vault is e2e-encrypted;
+        standard vaults omit it (omission = standard encryption). After
+        setup, `sync-config --mode pull-only` makes the mode durable so the
+        clone can never push (setup defaults to bidirectional).
         """
         with self._lock:
+            self._ensure_state_dir()
             argv = [
                 self._ob_bin,
                 "sync-setup",
@@ -80,13 +107,23 @@ class SyncService:
             ]
             if e2e_password:
                 argv += ["--password", e2e_password]
-            self._run(argv, input="\n", check=True)
+            self._run(argv, check=True)
+            self._run(
+                [self._ob_bin, "sync-config", "--mode", "pull-only", "--path", str(self._workspace_dir)],
+                check=True,
+            )
 
     def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
-        """One `ob sync --mode pull-only` pull; failures degrade to a SyncResult (never raises)."""
+        """One bare `ob sync --path <dir>` pull; failures degrade to a SyncResult (never raises).
+
+        The mode is whatever the sync config says (pull-only, set by
+        link_vault at set-up time); passing `--mode` here would be invalid.
+        """
         with self._lock:
             try:
-                proc = self._run([self._ob_bin, "sync", "--mode", "pull-only"], timeout_seconds=timeout_seconds)
+                proc = self._run(
+                    [self._ob_bin, "sync", "--path", str(self._workspace_dir)], timeout_seconds=timeout_seconds
+                )
             except subprocess.TimeoutExpired as exc:
                 return SyncResult(ok=False, mode="pull-only", detail=_stderr_text(exc.stderr)[-_STDERR_TAIL_CHARS:])
             if proc.returncode == 0:
@@ -95,14 +132,20 @@ class SyncService:
 
     # -- internals -------------------------------------------------------------
 
-    def _env(self) -> dict[str, str]:
-        """Inherited env plus the state-dir wiring `ob` actually reads.
+    def token_file(self) -> Path:
+        """The ob auth-token path (login-state truth): `<state>/obsidian-headless/auth_token`."""
+        return self._state_dir / _STATE_SUBDIR / _TOKEN_FILE
 
-        obsidian-headless does NOT read `OB_STATE`: its state root is
-        `$XDG_CONFIG_HOME/obsidian-headless` (Linux XDG default
-        `~/.config`), so the Volume-backed persistence comes from pointing
-        `XDG_CONFIG_HOME` at the state dir. `OB_STATE` stays set for
-        forward-compat (harmless; the binary ignores it).
+    def _ensure_state_dir(self) -> None:
+        """ob will not mkdir the XDG parent; it only creates its own subdir under it."""
+        self._state_dir.mkdir(parents=True, exist_ok=True)
+
+    def _env(self) -> dict[str, str]:
+        """Inherited env plus the state wiring `ob` actually reads.
+
+        obsidian-headless reads only `XDG_CONFIG_HOME` (+ the
+        `OBSIDIAN_AUTH_TOKEN` override); `OB_STATE` is inert and stays set
+        only for forward-compat.
         """
         env = dict(os.environ)
         env["OB_STATE"] = str(self._state_dir)

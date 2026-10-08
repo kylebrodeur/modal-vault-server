@@ -1,11 +1,16 @@
 """Test helper: writes an executable fake `ob` shell shim; tests prepend its dir to PATH.
 
-The shim appends one line per invocation to $OB_FAKE_LOG (`start <argv> cwd=<cwd>`),
-echoes `login`'s stdin into the log under a `stdin:` line, records
-`XDG_CONFIG_HOME` per line (state-root assertions), and takes its behavior from
-OB_FAKE_MODE: `ok` (default, exit 0), `fail` (~1.5KB on stderr, exit 1), `slow`
-(sleep OB_FAKE_SLEEP then a trailing `end <argv>` line, exit 0), `hang` (stderr note,
-then a long sleep so `one_shot(timeout_seconds=...)` exercises the timeout path).
+Behavior mirrors the REAL obsidian-headless contracts (verified live 2026-10-08):
+- logs one `start <argv> cwd=<cwd> xdg=<XDG_CONFIG_HOME>` line per invocation
+- `login` MUST be argv-flag driven to persist: with `--email/--password` flags the
+  shim records `persisted:auth_token`; with only stdin data (a legacy TTY-style
+  call) it logs the stdin but persists NOTHING (the silent no-op contract)
+- `whoami` is not a real command: any whoami invocation exits 127 (binary-says-no)
+- `sync` rejects `--mode` (exit 64, "invalid flag") when given one; bare
+  `sync --path <dir>` exits 0 and logs `pulled`
+- `sync-config --mode pull-only` logs `configured:pull-only`
+
+OB_FAKE_MODE retains the legacy failure/shaping knobs (`fail`, `slow`, `hang`).
 """
 
 from __future__ import annotations
@@ -16,14 +21,37 @@ from pathlib import Path
 SHIM = r"""#!/bin/sh
 log="${OB_FAKE_LOG:-/dev/null}"
 printf 'start %s cwd=%s xdg=%s\n' "$*" "$PWD" "${XDG_CONFIG_HOME:-}" >> "$log"
-if [ "$1" = "login" ]; then
-    stdin_data="$(cat)"
-    printf 'stdin:%s\n' "$stdin_data" >> "$log"
-fi
-if [ "$1" = "whoami" ] && [ -n "${OB_FAKE_WHOAMI:-}" ]; then
-    # OB_FAKE_WHOAMI=1 -> exit 1 (not logged in); "0" -> exit 0 (default keeps exit 0).
+
+if [ -n "${OB_FAKE_WHOAMI:-}" ] && [ "$1" = "whoami" ]; then
     exit "${OB_FAKE_WHOAMI:-0}"
 fi
+
+# login: flags persist a token; stdin-only silently does not (real-binary contract)
+if [ "$1" = "login" ]; then
+    stdin_data="$(cat)"
+    [ -n "$stdin_data" ] && printf 'stdin:%s\n' "$stdin_data" >> "$log"
+    case "$*" in
+        *--email*--password*)
+            state="${XDG_CONFIG_HOME:-/nonexistent}/obsidian-headless"
+            mkdir -p "$state" && printf 'token-fake\n' > "$state/auth_token"
+            printf 'persisted:auth_token\n' >> "$log"
+            ;;
+    esac
+fi
+
+if [ "$1" = "sync" ]; then
+    case "$*" in
+        *--mode*) printf 'ERROR: sync takes only --path/--continuous\n' >&2; exit 64 ;;
+        *) printf 'pulled\n' >> "$log" ;;
+    esac
+fi
+
+if [ "$1" = "sync-config" ]; then
+    case "$*" in
+        *--mode*pull-only*) printf 'configured:pull-only\n' >> "$log" ;;
+    esac
+fi
+
 case "${OB_FAKE_MODE:-ok}" in
 fail)
     i=0

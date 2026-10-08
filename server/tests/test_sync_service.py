@@ -37,24 +37,29 @@ def ob_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> ObEnv:
 
 
 class TestIsLoggedIn:
-    def test_whoami_exit_zero_is_true(self, ob_env: ObEnv) -> None:
-        assert ob_env.service.is_logged_in() is True
-        line = ob_env.log.read_text().splitlines()[0]
-        assert line.startswith(f"start whoami cwd={ob_env.workspace.resolve()}")
+    """The real binary has no `whoami`: the token file IS the login-state truth."""
 
-    def test_whoami_nonzero_exit_is_false(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OB_FAKE_MODE", "fail")
+    def test_fresh_state_is_false_and_touches_nothing(self, ob_env: ObEnv) -> None:
         assert ob_env.service.is_logged_in() is False
+        assert not ob_env.log.exists()  # the check is a file test, no subprocess
+
+    def test_state_file_present_is_true(self, ob_env: ObEnv) -> None:
+        token_file = ob_env.state / "obsidian-headless" / "auth_token"
+        token_file.parent.mkdir(parents=True)
+        token_file.write_text("token-fake")
+        assert ob_env.service.is_logged_in() is True
 
 
 class TestBootstrap:
-    def test_creds_travel_via_stdin_only_never_argv(self, ob_env: ObEnv) -> None:
+    def test_login_rides_argv_flags_and_persists_token(self, ob_env: ObEnv) -> None:
+        """argv-flag login is the form the real binary honors (stdin no-ops)."""
         ob_env.service.bootstrap("agent@example.com", "s3cret-pass")
-        # Exact two-entry log pins both contracts: argv is bare `login` (+cwd), stdin carries
-        # exactly "email\npassword" (brief-verbatim, no trailing newline).
         blob = ob_env.log.read_text()
-        assert blob.startswith(f"start login cwd={ob_env.workspace.resolve()} xdg=")
-        assert "stdin:agent@example.com\ns3cret-pass" in blob
+        line = blob.splitlines()[0]
+        assert line.startswith("start login --email agent@example.com --password s3cret-pass ")
+        assert f"cwd={ob_env.workspace.resolve()}" in line
+        assert "stdin:" not in blob  # no stdin path anymore
+        assert "persisted:auth_token" in blob  # the shim proves persistence happened
 
     def test_bootstrap_raises_on_failure_with_stderr(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
@@ -69,7 +74,8 @@ class TestOneShot:
         result = ob_env.service.one_shot()
         assert result == SyncResult(ok=True, mode="pull-only", detail="")
         line = ob_env.log.read_text().splitlines()[0]
-        assert line.startswith(f"start sync --mode pull-only cwd={ob_env.workspace.resolve()}")
+        assert line.startswith(f"start sync --path {ob_env.workspace.resolve()} ")
+        assert "--mode" not in line  # INVALID on the real binary (takes only --path/--continuous)
 
     def test_failure_detail_is_stderr_tail_last_500_chars(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
@@ -109,7 +115,6 @@ class TestSerialization:
         for thread in threads:
             thread.join()
         assert [r.ok for r in results] == [True, True]
-        lines = ob_env.log.read_text().splitlines()
-        assert len(lines) == 4
-        for i, line in enumerate(lines):
-            assert line.startswith("start sync" if i % 2 == 0 else "end sync"), lines
+        # start/end ordering per invocation; 'pulled' progress lines interleaved
+        flow = [line.split(" ")[0] for line in ob_env.log.read_text().splitlines()]
+        assert flow == ["start", "pulled", "end", "start", "pulled", "end"]
