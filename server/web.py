@@ -42,9 +42,7 @@ def _bearer_ok(header_value: str | None, token: str) -> bool:
     """
     expected = f"Bearer {token}"
     return (
-        header_value is not None
-        and len(header_value) == len(expected)
-        and hmac.compare_digest(header_value, expected)
+        header_value is not None and len(header_value) == len(expected) and hmac.compare_digest(header_value, expected)
     )
 
 

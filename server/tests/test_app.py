@@ -58,7 +58,7 @@ class TestAppWiring:
     def test_volume_name_version_two(self) -> None:
         assert app_module.VOLUME_NAME == "modal-vault"
         assert app_module.VOLUME_VERSION == 2
-        assert 'version=VOLUME_VERSION' in _APP_SOURCE or "version=2" in _APP_SOURCE
+        assert "version=VOLUME_VERSION" in _APP_SOURCE or "version=2" in _APP_SOURCE
 
     def test_volume_mounts_match_env(self) -> None:
         assert app_module.VAULT_DATA_DIR == "/vault"
@@ -68,7 +68,7 @@ class TestAppWiring:
 
     def test_secret_name(self) -> None:
         assert app_module.SECRET_NAME == "modal-vault-secret"
-        assert 'Secret.from_name(SECRET_NAME)' in _APP_SOURCE
+        assert "Secret.from_name(SECRET_NAME)" in _APP_SOURCE
 
     def test_function_knobs(self) -> None:
         assert "scaledown_window=300" in _APP_SOURCE
@@ -116,9 +116,7 @@ class TestServeBuildPath:
         with pytest.raises(RuntimeError, match="VAULT_API_TOKEN"):
             _build_serving_app()
 
-    def test_with_token_returns_fastapi_with_mcp_mount(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_with_token_returns_fastapi_with_mcp_mount(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         shim = install(tmp_path / "bin")
         monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ.get('PATH', '')}")
         monkeypatch.setenv("OB_FAKE_LOG", str(tmp_path / "ob.log"))
@@ -131,9 +129,7 @@ class TestServeBuildPath:
         assert Mount in routes and Route in routes  # /mcp double route from web.build_app
         assert any(getattr(route, "path", None) == "/health" for route in application.routes)
 
-    def test_boot_sync_failure_is_contained_not_fatal(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> None:
+    def test_boot_sync_failure_is_contained_not_fatal(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         shim = install(tmp_path / "bin")
         monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ.get('PATH', '')}")
         monkeypatch.setenv("OB_FAKE_LOG", str(tmp_path / "ob.log"))

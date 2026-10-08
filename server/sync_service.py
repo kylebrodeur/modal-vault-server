@@ -53,9 +53,7 @@ class SyncService:
         """One `ob sync --mode pull-only` pull; failures degrade to a SyncResult (never raises)."""
         with self._lock:
             try:
-                proc = self._run(
-                    [self._ob_bin, "sync", "--mode", "pull-only"], timeout_seconds=timeout_seconds
-                )
+                proc = self._run([self._ob_bin, "sync", "--mode", "pull-only"], timeout_seconds=timeout_seconds)
             except subprocess.TimeoutExpired as exc:
                 return SyncResult(ok=False, mode="pull-only", detail=_stderr_text(exc.stderr)[-_STDERR_TAIL_CHARS:])
             if proc.returncode == 0:

@@ -89,8 +89,7 @@ def _build_serving_app() -> FastAPI:
     cfg = Config.load()
     if not cfg.api_token:
         raise RuntimeError(
-            "VAULT_API_TOKEN is empty: refusing to serve. "
-            "Put the bearer token in the modal-vault-secret Secret."
+            "VAULT_API_TOKEN is empty: refusing to serve. Put the bearer token in the modal-vault-secret Secret."
         )
     sync = SyncService(cfg.data_dir, cfg.state_dir)
     run_boot(cfg, sync)

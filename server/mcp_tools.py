@@ -86,8 +86,7 @@ class VaultTools:
         {
             "name": "vault.read",
             "description": (
-                "Read one note's full text and frontmatter. Missing notes return "
-                "exists:false, not an error."
+                "Read one note's full text and frontmatter. Missing notes return exists:false, not an error."
             ),
             "inputSchema": {
                 "type": "object",
@@ -98,8 +97,7 @@ class VaultTools:
         {
             "name": "vault.list",
             "description": (
-                "List notes (path + frontmatter), optionally filtered by directory "
-                "prefix and frontmatter tag."
+                "List notes (path + frontmatter), optionally filtered by directory prefix and frontmatter tag."
             ),
             "inputSchema": {
                 "type": "object",
@@ -112,8 +110,7 @@ class VaultTools:
         {
             "name": "vault.query_graph",
             "description": (
-                "Link-graph neighborhood around one seed note within `depth` hops "
-                "(kind 'note-link' only in slice 1)."
+                "Link-graph neighborhood around one seed note within `depth` hops (kind 'note-link' only in slice 1)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -128,8 +125,7 @@ class VaultTools:
         {
             "name": "vault.status",
             "description": (
-                "Sync watermark, live note count, and the semantic-search door "
-                "(honest about what is wired)."
+                "Sync watermark, live note count, and the semantic-search door (honest about what is wired)."
             ),
             "inputSchema": {"type": "object", "properties": {}},
         },

@@ -112,6 +112,7 @@ class TestAdminSync:
 
     def test_timeout_knob_reaches_one_shot(self, tmp_path: Path) -> None:
         """Config's sync_timeout arrives as one_shot's timeout arg (boot + admin both thread it)."""
+
         class RecordingSync:
             def __init__(self) -> None:
                 self.seen: list[int] = []
@@ -177,9 +178,16 @@ class TestMcpGate:
         try:
             reply = booted.client.post(
                 "/mcp",
-                json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                      "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                                 "clientInfo": {"name": "t", "version": "0"}}},
+                json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-06-18",
+                        "capabilities": {},
+                        "clientInfo": {"name": "t", "version": "0"},
+                    },
+                },
                 headers={"Authorization": "Bearer tok", "Accept": "application/json, text/event-stream"},
             )
         finally:

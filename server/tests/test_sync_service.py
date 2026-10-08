@@ -48,9 +48,7 @@ class TestIsLoggedIn:
 
 
 class TestBootstrap:
-    def test_creds_travel_via_stdin_only_never_argv(
-        self, ob_env: ObEnv
-    ) -> None:
+    def test_creds_travel_via_stdin_only_never_argv(self, ob_env: ObEnv) -> None:
         ob_env.service.bootstrap("agent@example.com", "s3cret-pass")
         # Exact two-entry log pins both contracts: argv is bare `login` (+cwd), stdin carries
         # exactly "email\npassword" (brief-verbatim, no trailing newline).
@@ -58,9 +56,7 @@ class TestBootstrap:
             f"start login cwd={ob_env.workspace.resolve()}\nstdin:agent@example.com\ns3cret-pass\n"
         )
 
-    def test_bootstrap_raises_on_failure_with_stderr(
-        self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_bootstrap_raises_on_failure_with_stderr(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
         with pytest.raises(subprocess.CalledProcessError) as excinfo:
             ob_env.service.bootstrap("agent@example.com", "s3cret-pass")
@@ -75,9 +71,7 @@ class TestOneShot:
         line = ob_env.log.read_text().splitlines()[0]
         assert line == f"start sync --mode pull-only cwd={ob_env.workspace.resolve()}"
 
-    def test_failure_detail_is_stderr_tail_last_500_chars(
-        self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_failure_detail_is_stderr_tail_last_500_chars(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("OB_FAKE_MODE", "fail")
         result = ob_env.service.one_shot()
         assert result.ok is False
@@ -101,9 +95,7 @@ class TestOneShot:
 
 
 class TestSerialization:
-    def test_two_concurrent_one_shots_do_not_overlap(
-        self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_two_concurrent_one_shots_do_not_overlap(self, ob_env: ObEnv, monkeypatch: pytest.MonkeyPatch) -> None:
         """Lock contract: with a 0.2s shim, argv-file ordering must be start,end,start,end."""
         monkeypatch.setenv("OB_FAKE_MODE", "slow")
         results: list[SyncResult] = []

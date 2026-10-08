@@ -134,8 +134,6 @@ def scan_vault(vault_dir: Path, query: str, k: int = 8, prefix: str = "") -> lis
         for tok in tokens:
             score += _WEIGHT_BODY * lowered.count(tok)
             score += _WEIGHT_TITLE * stem.count(tok)
-        ranked.append(
-            (score, rel, {"id": rel, "text": text, "frontmatter": frontmatter_of(text), "score": score})
-        )
+        ranked.append((score, rel, {"id": rel, "text": text, "frontmatter": frontmatter_of(text), "score": score}))
     ranked.sort(key=lambda item: (-item[0], item[1]))
     return [entry[2] for entry in ranked[: max(k, 0)]]

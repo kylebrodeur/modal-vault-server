@@ -216,9 +216,7 @@ class TestStatusTool:
     async def test_reads_last_sync_watermark(self, vault: Path) -> None:
         state = vault / "state"
         state.mkdir()
-        (state / "last_sync.json").write_text(
-            '{"last_sync_at": "2026-10-06T00:00:00Z", "ok": true}', encoding="utf-8"
-        )
+        (state / "last_sync.json").write_text('{"last_sync_at": "2026-10-06T00:00:00Z", "ok": true}', encoding="utf-8")
         out = await _tools(vault).call("vault.status", {})
         assert out["sync"] == {"mode": "pull-only", "last_sync_at": "2026-10-06T00:00:00Z", "ok": True}
 
