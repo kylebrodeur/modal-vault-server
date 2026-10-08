@@ -28,17 +28,27 @@ Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade
 ## Quick start
 
 ```bash
-modal setup  # one-time: authenticate with Modal
+git clone https://github.com/kylebrodeur/modal-vault-server
+cd modal-vault-server
+
+uv sync --project server   # project env carries fastapi/mcp/modal for the deploy parse
+modal setup                # one-time: authenticate with Modal
 
 mtk secrets check
 mtk secrets create --pkg vault
 
 modal secret create modal-vault-secret VAULT_API_TOKEN=$(openssl rand -hex 32)
 
-uvx modal deploy server/app.py
+PYTHONPATH=$PWD server/.venv/bin/modal deploy server/app.py
 ```
 
 `server/secrets.toml` is the source of truth for secret names and keys.
+
+Two deploy quirks (why the `PYTHONPATH`): the Modal CLI loads the app
+file with `server/` on the path (not the repo root), so `from
+server.config import ...` needs the repo root on `PYTHONPATH`; and
+running anything from inside `server/` collides stdlib `types` with
+`server/types.py` - deploy from the repo root.
 
 Deploy prints the web URL, e.g. `https://<workspace>--modal-vault-server-serve.modal.run`.
 
@@ -85,13 +95,13 @@ Explicitly not built. Candidates, in no committed order:
 
 ## Part of the Modal Toolkit
 
-Six standalone Modal utilities from the same author, each extractable and deployable on its own.
+Seven standalone Modal utilities from the same author, each extractable and deployable on its own.
 
 - **[modal-embedding-server](https://github.com/kylebrodeur/modal-embedding-server):** GPU-backed embeddings with a monotonic sync protocol for private-first search.
 - **[modal-inference-server](https://github.com/kylebrodeur/modal-inference-server):** OpenAI-compatible LLM inference with hot-set routing and scale-to-zero.
 - **[modal-vision-server](https://github.com/kylebrodeur/modal-vision-server):** Generic vision classification: pick your model (open_clip or transformers weights), your segmenter (SAM 2.1 or none), and your fast gate (self, cheap CLIP, deterministic script, or external endpoint). The BioCLIP plant stack ships as the example card.
 - **[modal-finetune-server](https://github.com/kylebrodeur/modal-finetune-server):** Profile-driven LoRA fine-tune and GGUF pipeline with an honest eval gate.
-- **[modal-toolkit](https://github.com/kylebrodeur/modal-toolkit):** One operator CLI (`mtk`) that runs the fleet: `doctor`, `warm --all`, `shutdown --all`, `cost`, `flow`.
+- **[modal-toolkit](https://github.com/kylebrodeur/modal-toolkit):** One operator CLI (`mtk`) that runs the fleet: `doctor`, `secrets`, `warm --all`, `shutdown --all`, `cost`, `flow`, `dashboard`.
 - **[embed-eval-on-your-vault](https://github.com/kylebrodeur/embed-eval-on-your-vault):** the eval-first pattern (benchmark embedding models on your own data before you deploy) as a single-file, zero-dependency harness.
 - **[modal-vault-server](https://github.com/kylebrodeur/modal-vault-server):** Hosted vault + MCP memory plane: server-side Obsidian clone via Headless Sync with searchable state agents reach over MCP.
 

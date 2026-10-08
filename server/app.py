@@ -1,9 +1,12 @@
 """Modal App: image, volume, secret, and the single web function.
 
-Deploy from the repo root (the Modal CLI loads this file with the repo root on
-the path, which keeps stdlib `types` clear of server/types.py):
+Deploy from the repo root (the Modal CLI loads this file with `server/`
+on the path, not the repo root - hence the PYTHONPATH; running anything
+from inside `server/` would shadow stdlib `types` with
+`server/types.py`):
 
-    uvx modal deploy server/app.py
+    uv sync --project server
+    PYTHONPATH=$PWD server/.venv/bin/modal deploy server/app.py
 
 Image: node:24-bookworm-slim + Python 3.12 (the `ob` headless-sync binary is an
 npm package, so the base image must carry node; marksman is not needed - the v1
