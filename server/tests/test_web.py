@@ -117,6 +117,10 @@ class TestAdminSync:
             def __init__(self) -> None:
                 self.seen: list[int] = []
 
+            @staticmethod
+            def is_logged_in() -> bool:
+                return True  # state present: no boot login
+
             def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
                 self.seen.append(timeout_seconds)
                 return SyncResult(ok=True, mode="pull-only", detail="")
@@ -267,6 +271,10 @@ class TestRunBoot:
 
     def test_success_writes_watermark_and_returns_clean(self, tmp_path) -> None:
         class GoodSync:
+            @staticmethod
+            def is_logged_in() -> bool:
+                return True  # state present: no boot login
+
             def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
                 return SyncResult(ok=True, mode="pull-only", detail="")
 
@@ -280,6 +288,10 @@ class TestRunBoot:
 
     def test_failure_leaves_clone_untouched_and_degraded(self, tmp_path) -> None:
         class BadSync:
+            @staticmethod
+            def is_logged_in() -> bool:
+                return True
+
             def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
                 return SyncResult(ok=False, mode="pull-only", detail="sync failed hard")
 
@@ -295,6 +307,10 @@ class TestRunBoot:
 
     def test_never_raises_when_sync_impl_raises(self, tmp_path) -> None:
         class ExplodingSync:
+            @staticmethod
+            def is_logged_in() -> bool:
+                return True
+
             def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
                 raise RuntimeError("ob exploded")
 

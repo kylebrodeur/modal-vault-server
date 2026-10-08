@@ -44,10 +44,34 @@ class SyncService:
             proc = self._run([self._ob_bin, "whoami"])
             return proc.returncode == 0
 
-    def bootstrap(self, email: str, password: str) -> None:
-        """Run `ob login` for first-boot provisioning; raises CalledProcessError on failure."""
+    def bootstrap(self, email: str, password: str, mfa: str = "") -> None:
+        """Run `ob login` for first-boot provisioning; raises CalledProcessError on failure.
+
+        Credentials travel via stdin only (never argv, never logs): email then
+        password on separate lines, then the MFA code when the account has MFA.
+        """
         with self._lock:
-            self._run([self._ob_bin, "login"], input=f"{email}\n{password}", check=True)
+            payload = f"{email}\n{password}" + (f"\n{mfa}" if mfa else "")
+            argv = [self._ob_bin, "login"] + (["--mfa"] if mfa else [])
+            self._run(argv, input=payload, check=True)
+
+    def link_vault(self, vault_name: str, e2e_password: str = "", device_name: str = "modal-vault-server") -> None:
+        """Run `ob sync-setup` once after login; raises CalledProcessError on failure.
+
+        Associates this clone/state pair with the named Obsidian Sync vault.
+        `e2e_password` is the vault's end-to-end encryption password: pass it
+        only for e2e-encrypted vaults. It rides `--password` on argv (the
+        same trade-off the headless-sync worker proved against the real
+        binary; `ob` does not document stdin prompting for sync-setup, and
+        a silent no-op would strand e2e vaults) - acceptable inside a
+        single-tenant container, where `ps` shows only that container's
+        own processes.
+        """
+        with self._lock:
+            argv = [self._ob_bin, "sync-setup", "--vault", vault_name, "--device-name", device_name]
+            if e2e_password:
+                argv += ["--password", e2e_password]
+            self._run(argv, input="\n", check=True)
 
     def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
         """One `ob sync --mode pull-only` pull; failures degrade to a SyncResult (never raises)."""

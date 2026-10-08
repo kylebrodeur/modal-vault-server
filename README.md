@@ -68,7 +68,19 @@ MCP client config sample (streamable HTTP):
 }
 ```
 
-The bearer gate covers `/mcp` and `/admin/*`; an empty `VAULT_API_TOKEN` refuses to serve entirely (fail-closed). First-boot note: the `ob` login state persists on the Volume, but the login bootstrap is not wired into v1 serving; until a logged-in clone exists, `/health` reports degraded and tools see an empty clone.
+The bearer gate covers `/mcp` and `/admin/*`; an empty `VAULT_API_TOKEN` refuses to serve entirely (fail-closed).
+
+## First-boot bootstrap (optional)
+
+Without login state, the server runs and reports degraded honestly. To
+make the FIRST deploy self-provisioning, add `ob` credentials to the
+same Secret; boot then runs `ob login` (MFA only when configured),
+optionally `ob sync-setup` (vault linking, e2e password only for
+e2e-encrypted vaults), and pulls - PVM headless-sync's proven phase
+order (auth before sync), applied generically. Credentials are read
+from env at boot only: never logged, never echoed, never written
+outside the process. Failures degrade to the old honest posture with a
+`boot.json` note (failure TYPE only, no values).
 
 ## Configuration
 
@@ -81,6 +93,10 @@ Every knob uses the `VAULT_` prefix and is read from env inside the container (t
 | `VAULT_STATE_DIR` | `ob` login state + sync watermark | `<data_dir>/state` |
 | `VAULT_SYNC_MODE` | Sync direction for the `ob` pull | `pull-only` |
 | `VAULT_SYNC_TIMEOUT` | Seconds before a one-shot pull times out | `1800` |
+| `VAULT_OB_EMAIL` / `VAULT_OB_PASSWORD` | Optional first-boot `ob login` credentials (in the Secret); absent = no bootstrap, degraded until state arrives | unset |
+| `VAULT_OB_MFA` | MFA code when the account has MFA (login-time) | unset |
+| `VAULT_OB_VAULT` | Sync vault name; set to run `sync-setup` on first boot | unset |
+| `VAULT_OB_E2E_PASSWORD` | End-to-end encryption password; only for e2e-encrypted vaults | unset |
 
 Volume layout: one Modal Volume (v2) carries everything. `/vault` is the clone; `/state` (login state + watermark) is a symlink into `/vault/state` because Modal forbids mounting one Volume at two roots.
 

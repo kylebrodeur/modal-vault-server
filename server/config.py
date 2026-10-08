@@ -15,13 +15,28 @@ def _path_env(name: str, default: str) -> Path:
 
 @dataclass(frozen=True)
 class Config:
-    """Runtime configuration, loaded from VAULT_* environment variables."""
+    """Runtime configuration, loaded from VAULT_* environment variables.
+
+    The `ob_` credentials (optional) enable first-boot login when the state
+    directory is empty: put them in the `modal-vault-secret` Modal Secret.
+    Read from env once at boot; never logged, never echoed, never stored
+    outside the process.
+    """
 
     api_token: str
     data_dir: Path  # vault clone
     state_dir: Path  # ob login/sync state
     sync_mode: str = "pull-only"
     sync_timeout: int = 1800
+    ob_email: str = ""
+    ob_password: str = ""
+    ob_mfa: str = ""  # MFA code when the account has MFA (one-time at login)
+    ob_vault: str = ""  # Sync vault name; set to run sync-setup on first boot
+    ob_e2e_password: str = ""  # only for e2e-encrypted vaults
+
+    @property
+    def has_ob_credentials(self) -> bool:
+        return bool(self.ob_email and self.ob_password)
 
     @classmethod
     def load(cls) -> Config:
@@ -33,4 +48,9 @@ class Config:
             state_dir=_path_env("VAULT_STATE_DIR", str(data_dir / "state")),
             sync_mode=os.environ.get("VAULT_SYNC_MODE", "pull-only"),
             sync_timeout=int(os.environ.get("VAULT_SYNC_TIMEOUT", "1800")),
+            ob_email=os.environ.get("VAULT_OB_EMAIL", ""),
+            ob_password=os.environ.get("VAULT_OB_PASSWORD", ""),
+            ob_mfa=os.environ.get("VAULT_OB_MFA", ""),
+            ob_vault=os.environ.get("VAULT_OB_VAULT", ""),
+            ob_e2e_password=os.environ.get("VAULT_OB_E2E_PASSWORD", ""),
         )

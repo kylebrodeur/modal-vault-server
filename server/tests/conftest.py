@@ -43,6 +43,10 @@ class SyncStub:
         self._results = list(results)
         self.calls: list[int] = []
         self._booted = False
+        self.logged_in = False  # harness default: state already present (no boot login)
+
+    def is_logged_in(self) -> bool:
+        return self.logged_in
 
     def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
         result = self._results.pop(0) if len(self._results) > 1 else self._results[0]

@@ -10,6 +10,7 @@ to `VaultTools.call`. The mount is guarded by a raw ASGI bearer gate covering
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hmac
 import json
 from collections.abc import AsyncIterator
@@ -164,7 +165,28 @@ def _vault_exists(data_dir: Path) -> bool:
 
 
 def run_boot(cfg: Config, sync: SyncService) -> dict[str, Any]:
-    """Boot: one ob pull, then stamp the watermark; failure degrades, clone keeps last-good."""
+    """Boot: login+link when possible (first boot), then one ob pull + watermark stamp.
+
+    First boot (empty state + credentials present in env, from the
+    modal-vault-secret Secret): `ob login` -> optional `ob sync-setup` ->
+    then the pull, PVM-style phase order (auth before sync). With no
+    credentials, the pull runs anyway and its failure degrades exactly as it
+    did before - the honest fallback for state-less deploys. Credentials are
+    read from env at boot only; they are never logged, echoed, or written
+    outside the process.
+    """
+    bootstrapped = False
+    if not sync.is_logged_in() and cfg.has_ob_credentials:
+        try:
+            sync.bootstrap(cfg.ob_email, cfg.ob_password, mfa=cfg.ob_mfa)
+            if cfg.ob_vault:
+                sync.link_vault(cfg.ob_vault, e2e_password=cfg.ob_e2e_password)
+            bootstrapped = True
+        except Exception as exc:  # contained: degrade into the pull attempt below
+            bootstrapped = False
+            detail = f"boot login failed: {type(exc).__name__}"
+            with contextlib.suppress(OSError):
+                write_boot_note(cfg.state_dir, detail)
     try:
         result = sync.one_shot(timeout_seconds=cfg.sync_timeout)
     except Exception as exc:
@@ -175,7 +197,16 @@ def run_boot(cfg: Config, sync: SyncService) -> dict[str, Any]:
         except OSError as exc:
             detail = f"sync ok but watermark write failed: {exc}"
             return {"sync": SyncResult(ok=False, mode=result.mode, detail=detail), "degraded": True}
-    return {"sync": result, "degraded": not result.ok}
+    entry = {"sync": result, "degraded": not result.ok, "bootstrapped": bootstrapped}
+    return entry
+
+
+def write_boot_note(state_dir: Path, detail: str) -> None:
+    """Record a boot-phase failure WITHOUT the credential values (type only)."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "boot.json").write_text(
+        json.dumps({"event": "bootstrap_failed", "detail": detail, "at": _now_iso()}), encoding="utf-8"
+    )
 
 
 def write_watermark(state_dir: Path, mode: str, last_sync_at: str) -> None:

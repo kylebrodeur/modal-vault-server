@@ -19,6 +19,10 @@ if [ "$1" = "login" ]; then
     stdin_data="$(cat)"
     printf 'stdin:%s\n' "$stdin_data" >> "$log"
 fi
+if [ "$1" = "whoami" ] && [ -n "${OB_FAKE_WHOAMI:-}" ]; then
+    # OB_FAKE_WHOAMI=1 -> exit 1 (not logged in); "0" -> exit 0 (default keeps exit 0).
+    exit "${OB_FAKE_WHOAMI:-0}"
+fi
 case "${OB_FAKE_MODE:-ok}" in
 fail)
     i=0
