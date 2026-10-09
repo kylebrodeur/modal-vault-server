@@ -83,6 +83,7 @@ class TestFirstBootBootstrap:
             "start login --email kyle@example.com --password hunter2",
             setup_expected,
             f"start sync-config --mode pull-only --path {boot_env.workspace}",
+            f"start sync-config --path {boot_env.workspace} --excluded-folders .git",
             f"start sync --path {boot_env.workspace}",
         ]
         assert entry["bootstrapped"] is True

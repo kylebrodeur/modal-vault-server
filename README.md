@@ -111,14 +111,27 @@ Every knob uses the `VAULT_` prefix and is read from env inside the container (t
 
 Volume layout: one Modal Volume (v2) carries everything. `/vault` is the clone; `/state` (login state + watermark) is a symlink into `/vault/state` because Modal forbids mounting one Volume at two roots.
 
-## Slice 2 roadmap
+## Slice 2: the write door (shipped in v1.1.0)
 
-Explicitly not built. Candidates, in no committed order:
+- **Runtime sync postures** (`POST /admin/sync-mode`): `pull-only |
+  sync-on-write | continuous`, persisted in the state dir — flips at
+  runtime, no env var, no reboot; survives restarts; `/health` exposes
+  the posture.
+- **MCP write tools**: `vault.create_note` & `vault.update_note`
+  (snapshot-first, posture-aware sync), `vault.snapshots` (the undo
+  ladder), `vault.revert` (restore a path from a snapshot).
+- **Shadow git**: a real git repo over the clone; `.git` is excluded
+  from Sync; every write commits before it pushes; per-write undo.
+- **Delete stays off**: no `vault.delete` in the steady-state surface;
+  a windowed `allow_delete` runtime flag (self-expiring, restart-safe,
+  `POST /admin/allow-delete`) can arm it, and armed deletes still
+  require a successful pre-delete snapshot (no snapshot, no delete).
+- **Admin REST**: `POST /admin/notes` (create-or-update),
+  `/admin/notes/delete`, `/admin/allow-delete` — same core as MCP.
 
-- `vault.write` + `ob push` write-back: edit the clone server-side, deliver the edit back through Obsidian Sync.
-- Persistent `syncd` option: split the sync loop from serving so the clone stays always-current (the loop is already its own module; this changes the cost posture).
-- Semantic search: connect modal-embedding-server for embeddings/hybrid ranking; the `vault.status` door flips from constant to live only then.
-- Ledger/memory plane door: durable agent ledgers as integration hooks, not stored in this repo.
+Still open: semantic search (the `vault.status` door goes live when
+`VAULT_EMBEDDING_URL` lands in the Secret; hybrid ranking comes after),
+the ledger/memory-plane door.
 
 ## Part of the Modal Toolkit
 

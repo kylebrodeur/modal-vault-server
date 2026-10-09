@@ -27,6 +27,7 @@ would fight over it.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import threading
@@ -112,6 +113,18 @@ class SyncService:
                 [self._ob_bin, "sync-config", "--mode", "pull-only", "--path", str(self._workspace_dir)],
                 check=True,
             )
+            # Keep git metadata out of Sync: the shadow repo's .git never rides upstream.
+            self._run(
+                [
+                    self._ob_bin,
+                    "sync-config",
+                    "--path",
+                    str(self._workspace_dir),
+                    "--excluded-folders",
+                    ".git",
+                ],
+                check=True,
+            )
 
     def one_shot(self, timeout_seconds: int = 1800) -> SyncResult:
         """One bare `ob sync --path <dir>` pull; failures degrade to a SyncResult (never raises).
@@ -129,6 +142,26 @@ class SyncService:
             if proc.returncode == 0:
                 return SyncResult(ok=True, mode="pull-only", detail="")
             return SyncResult(ok=False, mode="pull-only", detail=_stderr_text(proc.stderr)[-_STDERR_TAIL_CHARS:])
+
+    def exclude_paths(self, paths: tuple[str, ...] = (".git",)) -> None:
+        """Best-effort: exclude paths from ob sync (the shadow repo's .git never rides Sync).
+
+        `ob sync-config --excluded-folders …`. Contained: when the clone is not
+        yet linked, ob fails and we swallow it - `link_vault` re-applies after
+        every successful setup.
+        """
+        with self._lock, contextlib.suppress(subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+            self._run(
+                [
+                    self._ob_bin,
+                    "sync-config",
+                    "--path",
+                    str(self._workspace_dir),
+                    "--excluded-folders",
+                    ",".join(paths),
+                ],
+                check=True,
+            )
 
     # -- internals -------------------------------------------------------------
 

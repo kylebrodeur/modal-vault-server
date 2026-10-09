@@ -13,6 +13,7 @@ import posixpath
 from typing import Any, ClassVar
 
 from server.config import Config
+from server.embedding_adapter import semantic_section
 from server.linker import build_edge_set, posixpath_norm, resolve_link
 from server.types import LAST_SYNC_FILE, EdgeRow
 
@@ -61,7 +62,10 @@ def edge_neighborhood(edges: list[EdgeRow], seeds: list[str], depth: int = 1) ->
 
 
 class VaultTools:
-    """The read-only vault tool family behind the MCP server (Task 7 mounts these)."""
+    """The vault tool family behind the MCP server (reads always; writes via the door)."""
+
+    WRITER: ClassVar[Any] = None  # injected by build_mcp_server when the door is built
+    STATE_DIR_GETTER: ClassVar[Any] = None  # () -> state_dir, for the delete-arm check
 
     TOOLS: ClassVar[list[dict]] = [
         {
@@ -129,6 +133,67 @@ class VaultTools:
             ),
             "inputSchema": {"type": "object", "properties": {}},
         },
+        {
+            "name": "vault.create_note",
+            "description": (
+                "Create a NEW note (path + markdown text; frontmatter inside the text). "
+                "Refuses an existing path - update_note is the honest tool for that. The note is "
+                "snapshot-committed to the shadow git first; it syncs upstream only in the "
+                "sync-on-write/continuous postures (pull-only stages it locally)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Vault-relative note path (e.g. inbox/idea.md)"},
+                    "text": {"type": "string", "description": "Full note text to write"},
+                    "agent": {
+                        "type": "string",
+                        "description": "Your agent/session id (provenance; lands in the snapshot message)",
+                    },
+                },
+                "required": ["path", "text"],
+            },
+        },
+        {
+            "name": "vault.update_note",
+            "description": (
+                "Full-text update of an EXISTING note (frontmatter included in the text). "
+                "Snapshot-first; syncs per the posture."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Vault-relative note path"},
+                    "text": {"type": "string", "description": "Full note text to write"},
+                    "agent": {"type": "string", "description": "Your agent/session id (provenance)"},
+                },
+                "required": ["path", "text"],
+            },
+        },
+        {
+            "name": "vault.snapshots",
+            "description": ("The shadow-git snapshot log (whole vault or one path): the undo ladder."),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Only snapshots touching this path"},
+                    "limit": {"type": "integer", "default": 20, "maximum": 100},
+                },
+            },
+        },
+        {
+            "name": "vault.revert",
+            "description": ("Restore one path's content from a snapshot ref (sha), snapshotting the revert itself."),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Vault-relative note path"},
+                    "ref": {"type": "string", "description": "Snapshot sha (from vault.snapshots)"},
+                    "agent": {"type": "string", "description": "Your agent/session id (provenance)"},
+                },
+                "required": ["path", "ref"],
+            },
+        },
     ]
 
     def __init__(self, cfg: Config, search: Any, sync: Any) -> None:
@@ -161,7 +226,53 @@ class VaultTools:
             return await self._query_graph_tool(arguments)
         if name == "vault.status":
             return await self._status_tool(arguments)
+        if name == "vault.create_note":
+            return self._write_guard("create_note", arguments)
+        if name == "vault.update_note":
+            return self._write_guard("update_note", arguments)
+        if name == "vault.delete_note":
+            return self._write_guard("delete_note", arguments)
+        if name == "vault.snapshots":
+            return self._snapshots_tool(arguments)
+        if name == "vault.revert":
+            return self._revert_tool(arguments)
         return {"error": f"unknown tool: {name}"}
+
+    def _write_guard(self, verb: str, arguments: dict) -> dict:
+        """Writes exist ONLY when the write door is built (WRITER injected)."""
+        if self.WRITER is None:
+            return {"error": f"vault.{verb} is not available: the write door is disabled (pull-only posture server)"}
+        state_dir = self.STATE_DIR_GETTER() if self.STATE_DIR_GETTER else self._cfg.state_dir
+        return (
+            getattr(self.WRITER, verb)(
+                str(arguments.get("path", "")),
+                str(arguments.get("text", "")) if "text" in arguments else "",
+                agent=str(arguments.get("agent", "")),
+                state_dir=state_dir,
+            )
+            if verb == "delete_note"
+            else (
+                getattr(self.WRITER, verb)(
+                    str(arguments.get("path", "")),
+                    str(arguments.get("text", "")),
+                    agent=str(arguments.get("agent", "")),
+                )
+            )
+        )
+
+    def _snapshots_tool(self, arguments: dict) -> dict:
+        if self.WRITER is None:
+            return {"error": "vault.snapshots is not available: the write door is disabled"}
+        return self.WRITER.snapshots(
+            str(arguments.get("path", "")) or None, limit=int(arguments.get("limit", 20) or 20)
+        )
+
+    def _revert_tool(self, arguments: dict) -> dict:
+        if self.WRITER is None:
+            return {"error": "vault.revert is not available: the write door is disabled"}
+        return self.WRITER.revert(
+            str(arguments.get("path", "")), str(arguments.get("ref", "")), agent=str(arguments.get("agent", ""))
+        )
 
     # -- vault.search ---------------------------------------------------------
 
@@ -270,12 +381,12 @@ class VaultTools:
     # -- vault.status ---------------------------------------------------------
 
     async def _status_tool(self, arguments: dict) -> dict:
-        """Sync watermark + live note count + the semantic door (honest slice-1 state)."""
+        """Sync watermark + live note count + the semantic door (LIVE when configured)."""
         note_count = len(self._search.collect_notes(self._cfg.data_dir))
         return {
             "sync": self._sync_state(),
             "notes": note_count,
-            "semantic": dict(_SEMANTIC_DOOR),
+            "semantic": semantic_section(self._cfg),
         }
 
     def _sync_state(self) -> dict[str, Any]:

@@ -145,6 +145,9 @@ truth; the link graph is a live walk.
 mtk vault status        # ob sync-status --path /vault in the container
 mtk vault sync          # one pull in the container
 mtk vault pull-only     # set + persist mode pull-only (in the container)
+mtk vault sync-on-write # set mode bidirectional (write door bursts)
+mtk vault continuous    # run ob sync --continuous (real-time two-way)
+mtk vault mirror-remote # emergency: mirror remote, RESTRICT local changes
 mtk vault list-remote   # remote vaults the account sees
 mtk vault list-local    # locally configured vaults
 mtk vault config …      # ob sync-config passthrough
@@ -156,6 +159,21 @@ Each verb wakes the scale-to-zero app, finds its container, and execs
 `ob` there with `XDG_CONFIG_HOME=/vault/state`. NOTHING ever syncs on
 your machine; local sync defeats the server's purpose.
 
+Admin REST (bearer-gated, same token) and the MCP write tools share one
+core; the tool surface gains, when the write door is built (v2):
+
+| Tool | Purpose |
+|------|---------|
+| `vault.create_note` | new note (path + full text); refuses existing paths |
+| `vault.update_note` | full-text update of an existing note |
+| `vault.snapshots` | the shadow-git log (the undo ladder; per-path) |
+| `vault.revert` | restore one path from a snapshot sha |
+
+`vault.delete_note` exists ONLY while the windowed delete door is armed
+(`POST /admin/allow-delete {"action":"arm"}`); the door disarms itself
+when the window expires or the container restarts, and every delete
+requires a successful pre-delete snapshot (no snapshot, no delete).
+
 ### Admin REST (bearer-gated, same token)
 
 | Route | What it does |
@@ -164,13 +182,17 @@ your machine; local sync defeats the server's purpose.
 | `POST /admin/sync` | one `ob` pull now |
 | `POST /admin/sync-mode` | runtime posture flip: `{"mode": "pull-only"\|"sync-on-write"\|"continuous"}` |
 | `GET /admin/sync-mode` | current posture + whether the continuous daemon is live |
+| `POST /admin/notes` | create-or-update: `{"path","text","agent"}` (snapshot-first, posture-aware sync) |
+| `POST /admin/notes/delete` | delete — **only while the delete window is armed** |
+| `POST /admin/allow-delete` | arm/disarm/inspect the windowed delete door: `{"action":"arm"\|"disarm"\|"status","window_minutes":60}` |
 
 The flip is a RUNTIME decision persisted in the state dir
 (`sync-mode.json`): no env change, no redeploy, survives container
 restarts. `continuous` starts an owned `ob sync --continuous` daemon;
 the other postures stop it (the boot re-applies the persisted mode).
 `sync-on-write` means: every write does one serialized pull/push burst
-(no daemon between writes).
+(no daemon between writes). In `pull-only`, writes are staged locally
+and the reply says so.
 
 ---
 

@@ -30,8 +30,10 @@ from server import search_scan
 from server import sync_mode as sync_mode_module
 from server.config import Config
 from server.mcp_tools import VaultTools, sync_state
+from server.shadow_git import ShadowGit
 from server.sync_service import SyncService
 from server.types import LAST_SYNC_FILE, SyncResult
+from server.write_service import WriteService, arm_delete, delete_armed, disarm_delete
 
 _WWW_AUTHENTICATE = "Bearer"
 
@@ -111,6 +113,10 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     touches `ob` (only /admin/sync and boot do).
     """
     tools = VaultTools(cfg=cfg, search=search_scan, sync=sync)
+    git = ShadowGit(cfg.data_dir)
+    _ensure_report = git.ensure()
+    writer = WriteService(cfg, sync, git)
+    tools.WRITER = writer
     server = build_mcp_server(cfg, tools)
     mcp_asgi: ASGIApp = server.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")
     session_manager = server.session_manager
@@ -183,6 +189,63 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
         result = await asyncio.to_thread(sync.one_shot, cfg.sync_timeout)
         return JSONResponse({"ok": result.ok, "mode": result.mode, "detail": result.detail})
 
+    async def admin_note(request: Request, authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
+        """Bearer REST write: POST /admin/notes {"path","text","agent"} = create-or-update.
+
+        Create-or-update keeps the REST surface honest and idempotent; the tool
+        surface keeps create/update distinct. Same snapshot + posture rules as
+        the MCP tools (this is the shared core).
+        """
+        require_admin(authorization)
+        try:
+            body = json.loads((await request.body()).decode("utf-8", errors="replace") or "{}")
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        path = str(body.get("path", ""))
+        text = str(body.get("text", ""))
+        agent = str(body.get("agent", ""))
+        if not path or "text" not in body:
+            return JSONResponse({"error": "path and text are required"}, status_code=400)
+        out = await asyncio.to_thread(writer.upsert, path, text, agent)
+        status = 200 if out.get("written") else 400
+        return JSONResponse(out, status_code=status)
+
+    async def admin_delete_note(
+        request: Request, authorization: Annotated[str | None, Header()] = None
+    ) -> JSONResponse:
+        """Bearer REST delete - ONLY while the windowed allow_delete flag is armed."""
+        require_admin(authorization)
+        try:
+            body = json.loads((await request.body()).decode("utf-8", errors="replace") or "{}")
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        path = str(body.get("path", ""))
+        if not path:
+            return JSONResponse({"error": "path required"}, status_code=400)
+        out = await asyncio.to_thread(writer.delete_note, path, cfg.state_dir, str(body.get("agent", "")))
+        status = 200 if out.get("deleted") else 403 if "not armed" in str(out.get("error", "")) else 400
+        return JSONResponse(out, status_code=status)
+
+    async def admin_delete_flag(
+        request: Request, authorization: Annotated[str | None, Header()] = None
+    ) -> JSONResponse:
+        """Arm/disarm/inspect the windowed delete door (no env, no reboot)."""
+        require_admin(authorization)
+        try:
+            body = json.loads((await request.body()).decode("utf-8", errors="replace") or "{}")
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        action = str(body.get("action", "status"))
+        if action == "arm":
+            return JSONResponse(
+                await asyncio.to_thread(
+                    arm_delete, cfg.state_dir, int(body.get("window_minutes", 60) or 60), by=str(body.get("by", ""))
+                )
+            )
+        if action == "disarm":
+            return JSONResponse(await asyncio.to_thread(disarm_delete, cfg.state_dir))
+        return JSONResponse({"allow_delete": await asyncio.to_thread(delete_armed, cfg.state_dir)})
+
     app = FastAPI(
         title="modal-vault-server",
         lifespan=lifespan,
@@ -195,6 +258,9 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     app.post("/admin/sync")(admin_sync)
     app.post("/admin/sync-mode")(admin_sync_mode)
     app.get("/admin/sync-mode")(admin_get_sync_mode)
+    app.post("/admin/notes")(admin_note)
+    app.post("/admin/notes/delete")(admin_delete_note)
+    app.post("/admin/allow-delete")(admin_delete_flag)
     guarded = BearerGuard(mcp_asgi, cfg.api_token)
     # Two routes for one MCP endpoint: Mount serves sub-paths (Starlette keeps the
     # child's full path and sets root_path, so the SDK's inner Route("/mcp") matches

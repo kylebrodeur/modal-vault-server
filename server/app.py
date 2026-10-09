@@ -50,15 +50,20 @@ _SERVE_MODULE_NAMES = (
     "server.app",
     "server.config",
     "server.mcp_tools",
+    "server.embedding_adapter",
     "server.search_scan",
+    "server.shadow_git",
+    "server.sync_mode",
     "server.sync_service",
     "server.web",
     "server.linker",
     "server.types",
+    "server.write_service",
 )
 
 image = (
     modal.Image.from_registry("node:24-bookworm-slim", add_python="3.12")
+    .apt_install("git")  # the shadow-git snapshot layer over the clone
     .pip_install("fastapi[standard]>=0.115", "mcp>=1.0", "pyyaml>=6")
     .run_commands(
         # /state rides the same Volume as /vault (ob login state + watermark must

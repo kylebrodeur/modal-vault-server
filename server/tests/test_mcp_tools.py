@@ -41,7 +41,19 @@ class TestToolsRegistry:
 
     def test_all_five_tools_with_required_contract(self) -> None:
         names = {tool["name"] for tool in VaultTools.TOOLS}
-        assert names == {"vault.search", "vault.read", "vault.list", "vault.query_graph", "vault.status"}
+        # Five reads + the write door (create/update/snapshots/revert; delete is
+        # flag-gated and NOT a steady-state listed tool).
+        assert names == {
+            "vault.search",
+            "vault.read",
+            "vault.list",
+            "vault.query_graph",
+            "vault.status",
+            "vault.create_note",
+            "vault.update_note",
+            "vault.snapshots",
+            "vault.revert",
+        }
         for tool in VaultTools.TOOLS:
             assert set(tool) == {"name", "description", "inputSchema"}
             assert isinstance(tool["description"], str) and tool["description"]
@@ -210,7 +222,10 @@ class TestStatusTool:
         assert out == {
             "sync": {"mode": "pull-only", "last_sync_at": None, "ok": False},
             "notes": 4,
-            "semantic": {"configured": False, "note": "connect modal-embedding-server later"},
+            "semantic": {
+                "configured": False,
+                "note": "connect modal-embedding-server later (VAULT_EMBEDDING_URL in the Secret)",
+            },
         }
 
     async def test_reads_last_sync_watermark(self, vault: Path) -> None:
