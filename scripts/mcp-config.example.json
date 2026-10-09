@@ -1,0 +1,12 @@
+{
+  "$comment": "Generic MCP client config for the modal-vault server (upstream modal-vault-server). Preferred install: scripts/vault-mcp-install.sh --client codex|claude|json|gh (harness-native surfaces). This file is the json-mode template for harness-side mounts (omp, pi-via-extension) and any streamable-HTTP client. Replace <workspace> with your Modal workspace and <VAULT_API_TOKEN> with the bearer from the modal-vault-secret Secret. Never commit a real token.",
+  "mcpServers": {
+    "modal-vault": {
+      "type": "http",
+      "url": "https://<workspace>--modal-vault-server-serve.modal.run/mcp",
+      "headers": {
+        "Authorization": "Bearer <VAULT_API_TOKEN>"
+      }
+    }
+  }
+}

@@ -119,9 +119,24 @@ Any MCP-speaking client (streamable HTTP + bearer header):
 
 Client-matrix notes:
 
+- `scripts/vault-mcp-install.sh` writes the entry through each harness's
+  NATIVE surface, so you never hand-maintain five config copies:
+
+  ```bash
+  scripts/vault-mcp-install.sh --client codex   [--url URL] [--token TOKEN]
+  scripts/vault-mcp-install.sh --client claude  [--url URL]   # token via ${VAULT_API_TOKEN} expansion
+  scripts/vault-mcp-install.sh --client json    [--url URL] [--token TOKEN]  # generic mcpServers payload
+  scripts/vault-mcp-install.sh --client gh                    # interactive copilot guidance
+  scripts/vault-mcp-install.sh --client <any> --check         # dry-run, write nothing
+  scripts/vault-mcp-install.sh --client <any> --remove        # remove the entry
+  ```
+
+  `scripts/mcp-config.example.json` is the json-mode template (placeholder
+  workspace + token; never a real value).
 - pi/omp: put exactly the above config in the mcpServers section; the
   token comes from the Secret (read it via 1Password/Modal, never from
-  chat).
+  chat). omp mounts the json-mode payload harness-side; pi imports it
+  through its extension surface (pi has no built-in MCP).
 - Claude Desktop/other stdlib-only clients: use an MCP streamable-HTTP
   bridge if HTTP+servers aren't supported natively.
 
@@ -247,6 +262,7 @@ boots serve without re-login.
 | `sync` errors mention `--mode` | something passed `--mode` to `sync` (invalid) | mode belongs to `sync-config`; `mtk vault pull-only` |
 | clone exists but is empty | first pull hasn't finished | the first pull takes ~100s for big vaults; watch `mtk vault status` |
 | `XDG`-state lost after deploy | the state dir wasn't on the Volume | verify the `/state -> /vault/state` symlink + the Volume mount in `modal app logs` |
+| `modal volume put` writes not visible to a running container (or clobbered) | an already-running container holds its own mount view and commits over CLI puts on shutdown | CLI puts need a container restart to be seen; server-side writes are the durable path |
 
 ---
 
