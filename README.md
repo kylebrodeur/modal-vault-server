@@ -133,6 +133,29 @@ Still open: semantic search (the `vault.status` door goes live when
 `VAULT_EMBEDDING_URL` lands in the Secret; hybrid ranking comes after),
 the ledger/memory-plane door.
 
+## Lifecycle hooks
+
+This package fires a lifecycle hook seam (vendored verbatim from
+[modal-shared-libs](https://github.com/kylebrodeur/modal-shared-libs),
+refreshed by `mtk libs sync`): one shared instance named
+`modal-vault-server`, closed tag set ``boot.pre` / `boot.post` / `write.post``.
+
+boot.pre before login/pull (cfg, sync-service), boot.post after boot (cfg, boot_report), write.post after each write/delete/revert (write_report).
+
+Register without touching the package source - the seam lives next to the
+real stage boundaries; handler errors are contained and reported
+(`last_errors(tag)`), never the server:
+
+```python
+from server.hooks import hooks
+
+
+@hooks.on("write.post")
+def observe(report): print(report)
+```
+
+The tag set changes only in this package's releases.
+
 ## Part of the Modal Toolkit
 
 Seven standalone Modal utilities from the same author, each extractable and deployable on its own.
