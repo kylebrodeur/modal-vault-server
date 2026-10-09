@@ -40,7 +40,14 @@ class Config:
 
     @classmethod
     def load(cls) -> Config:
-        """Read env with family defaults; state stays colocated with the vault by default."""
+        """Read env with family defaults; state stays colocated with the vault by default.
+
+        The ob credential knobs accept BOTH name shapes: the upstream
+        `VAULT_OB_*` names and the integration overlay's short `OB_*` names
+        (`OB_EMAIL`, `OB_PASSWORD`, `OB_MFA`, `OB_VAULT`, `OB_E2E_PASSWORD`) -
+        so an existing lane's Secrets work without remapping. `VAULT_OB_*`
+        wins when both are set.
+        """
         data_dir = _path_env("VAULT_DATA_DIR", "/vault")
         return cls(
             api_token=os.environ.get("VAULT_API_TOKEN", ""),
@@ -48,9 +55,18 @@ class Config:
             state_dir=_path_env("VAULT_STATE_DIR", str(data_dir / "state")),
             sync_mode=os.environ.get("VAULT_SYNC_MODE", "pull-only"),
             sync_timeout=int(os.environ.get("VAULT_SYNC_TIMEOUT", "1800")),
-            ob_email=os.environ.get("VAULT_OB_EMAIL", ""),
-            ob_password=os.environ.get("VAULT_OB_PASSWORD", ""),
-            ob_mfa=os.environ.get("VAULT_OB_MFA", ""),
-            ob_vault=os.environ.get("VAULT_OB_VAULT", ""),
-            ob_e2e_password=os.environ.get("VAULT_OB_E2E_PASSWORD", ""),
+            ob_email=_env_of("VAULT_OB_EMAIL", "OB_EMAIL"),
+            ob_password=_env_of("VAULT_OB_PASSWORD", "OB_PASSWORD"),
+            ob_mfa=_env_of("VAULT_OB_MFA", "OB_MFA"),
+            ob_vault=_env_of("VAULT_OB_VAULT", "OB_VAULT"),
+            ob_e2e_password=_env_of("VAULT_OB_E2E_PASSWORD", "OB_E2E_PASSWORD"),
         )
+
+
+def _env_of(*names: str) -> str:
+    """First non-empty env value among the names (name-fallback chain)."""
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""

@@ -250,11 +250,48 @@ boots serve without re-login.
 
 ---
 
-## 7. What's next (Slice 2: the write door)
+## 7. Integration: hooks, overlays, and upgrades (for lanes building on this)
 
-In design/implementation: runtime-mutable postures (done:
-`/admin/sync-mode`), shadow-git snapshot per write (commit-before-push,
-`.git` excluded from sync, revert door), MCP `vault.create_note` /
-`vault.update_note` + `POST /admin/notes`, and delete STAYING OFF until
-explicitly enabled by a windowed runtime flag (self-expiring; no env,
-no reboot). Until then the server is honestly read-only.
+Lanes that stand up their own instance of this server (a project, an
+agent team) integrate WITHOUT touching upstream code:
+
+- **The three options, in order of preference:**
+  1. *Deploy upstream directly.* Set the Secret + env overrides
+     (`MODAL_VAULT_APP_NAME`-style names are in the config layer); no
+     code of your own. Adopt upstream upgrades by pulling + redeploying.
+  2. *Ship a deploy overlay* (your own repo dir referencing this
+     checkout): set instance env (app name / secret names), and use
+     **`server/hooks`** to hook IN — never monkeypatch upstream modules.
+     Hooks are named lifecycle functions:
+     - `hooks.register("boot.pre", fn(cfg, sync))` — runs before
+       login/pull on every boot.
+     - `hooks.register("boot.post", fn(cfg, report))` — runs after boot
+       with the health-shaped report.
+     - `hooks.register("write.post", fn(report))` — runs after every
+       MCP/REST write/delete/revert with the full write report.
+     Multiple hooks coexist (you can build ON TOP of another lane's
+     hook); a hook's errors are contained and reported (they never break
+     boot or writes) — the tag list is closed; new tags are upstream
+     work.
+  3. *Consume the surfaces as a client*: MCP tools for agents; the admin
+     REST routes for scripts. No deploy of your own.
+- **Overridable knobs** (config file / env, per `docs/SETUP-AND-MCP.md`):
+  the app name, the Secret name, the Volume name, ob-credential env
+  names. `VAULT_OB_*` accepts the short `OB_*` names too, so existing
+  lanes' Secrets work without remapping.
+- **Upgrading an overlay lane** (the writing-duo vault-ob pattern): when
+  upstream grows the behavior you monkeypatched, retire your patch and
+  register the remainder as hooks (or nothing at all). Then: pull
+  upstream, run your deploy script, verify `/health` + your lane's
+  verbs. Upstream tags stay the upgrade unit; breaking hook changes are
+  called out in release notes.
+
+---
+
+## 8. What's next
+
+Shipped since v1.1.0: runtime-mutable sync postures (`/admin/sync-mode`),
+the shadow-git snapshot layer, the MCP write tools +
+`POST /admin/notes`, and the windowed delete door. Open work: hybrid
+semantic ranking (the `vault.status` door is live when `VAULT_EMBEDDING_URL`
+is set; ranking over it comes next) and the ledger/memory-plane door.

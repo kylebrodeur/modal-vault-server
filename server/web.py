@@ -295,7 +295,14 @@ def run_boot(cfg: Config, sync: SyncService) -> dict[str, Any]:
     did before - the honest fallback for state-less deploys. Credentials are
     read from env at boot only; they are never logged, echoed, or written
     outside the process.
+
+    Lifecycle: `hooks.TAG_BOOT_PRE` fires before login/pull; `TAG_BOOT_POST`
+    fires with the final report. Hook errors are contained + reported by the
+    hooks module (they never break boot).
     """
+    from server import hooks as hooks_module
+
+    hooks_module.fire(hooks_module.TAG_BOOT_PRE, cfg, sync)
     bootstrapped = False
     if not sync.is_logged_in() and cfg.has_ob_credentials:
         try:
@@ -317,8 +324,11 @@ def run_boot(cfg: Config, sync: SyncService) -> dict[str, Any]:
             write_watermark(cfg.state_dir, result.mode, _now_iso())
         except OSError as exc:
             detail = f"sync ok but watermark write failed: {exc}"
-            return {"sync": SyncResult(ok=False, mode=result.mode, detail=detail), "degraded": True}
+            _post = {"sync": SyncResult(ok=False, mode=result.mode, detail=detail), "degraded": True}
+            hooks_module.fire(hooks_module.TAG_BOOT_POST, cfg, _post)
+            return _post
     entry = {"sync": result, "degraded": not result.ok, "bootstrapped": bootstrapped}
+    hooks_module.fire(hooks_module.TAG_BOOT_POST, cfg, entry)
     return entry
 
 

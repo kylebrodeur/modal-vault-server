@@ -147,6 +147,8 @@ class WriteService:
     # -- internals -------------------------------------------------------------
 
     def _write(self, safe: str, text: str, agent: str, *, creating: bool) -> dict:
+        from server import hooks as hooks_module
+
         snapshot = self._git.commit(
             f"pre-{'create' if creating else 'update'} state (before write of {safe} by {agent or 'unknown'})",
             allow_empty=True,
@@ -159,7 +161,7 @@ class WriteService:
             return {"error": "write failed", "detail": str(exc)[:200], "snapshot": snapshot}
         post = self._git.commit(f"{'create' if creating else 'update'} {safe} (by {agent or 'unknown'})")
         synced = self._burst()
-        return {
+        out = {
             "written": True,
             "path": safe,
             "creating": creating,
@@ -167,6 +169,8 @@ class WriteService:
             "post_commit": post,
             "sync": synced,
         }
+        hooks_module.fire(hooks_module.TAG_WRITE_POST, out)
+        return out
 
     def _burst(self) -> dict:
         """One serialized ob pull/push burst - ONLY when the posture says so."""
