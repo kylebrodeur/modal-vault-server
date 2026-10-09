@@ -1,15 +1,15 @@
 # Vendored from modal-shared-libs (libs/hooks.py) by `mtk libs sync`:
-# family repo: modal-vault-server, md5 2a27ae48220c6c4c7df2102d7783f885. Canonical source of truth; report
+# family repo: modal-vault-server, md5 3474d4df6bd0aedbc76894988b62bcfa. Canonical source of truth; report
 # fixes there, not here.
 """Lifecycle hooks: the family's extension seam.
 
 The contract every package shares (the integration model lives in each
 package's docs; this module is the mechanism):
 
-- **Closed tag set.** A package declares ITS OWN tags at configure time
-  (`configure(tags)`); registering an undeclared tag refuses. The tag
-  list changes only in that package's releases - the contract is
-  versioned like the wire.
+- **Closed tag set.** A package declares ITS OWN tags when it constructs
+  its `Hooks(tags, name=...)` instance; registering an undeclared tag
+  refuses. The tag list changes only in that package's releases - the
+  contract is versioned like the wire.
 - **Multiple registrations coexist** per tag (call order: registration
   order). Lanes build on other lanes' hooks.
 - **Errors are contained and reported.** A hook failure degrades that
@@ -21,8 +21,10 @@ package's docs; this module is the mechanism):
   plain Python consumer can use it anywhere.
 
 A package fires at stable lifecycle points and documents its tags in
-its own docs (families so far: boot.pre/boot.post/write.post,
-request.pre/request.post, job.pre/job.post, stage boundaries).
+its own docs. Families in use include boot.pre/boot.post/write.post,
+request.pre/request.post/inject.pre, job.pre/job.post, lane.boot.*,
+dashboard.boot.*, and stage boundaries - not exhaustive; each package's
+docs carry the authoritative closed set.
 """
 
 from __future__ import annotations

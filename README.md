@@ -1,6 +1,6 @@
 # modal-vault-server
 
-Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read-only in v1).
+Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read tools always on; write tools posture-gated, pull-only by default).
 
 **Full setup + usage guide: [docs/SETUP-AND-MCP.md](docs/SETUP-AND-MCP.md)** (deploy, secrets, MCP client config, postures, admin REST, troubleshooting).
 
@@ -11,21 +11,32 @@ Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read
 
 ## What it is
 
-A single scale-to-zero Modal CPU app keeps a server-side clone of your Obsidian vault current via Headless Sync (`ob`, pull-only in v1) and serves that clone to any MCP-speaking agent as read-only memory tools. There is no vector index in this repo: keyword search is a live scan of the clone and the link graph is a live walk, so the clone itself is the only source of truth. Semantic search arrives by connecting [modal-embedding-server](https://github.com/kylebrodeur/modal-embedding-server) later; this repo stays vault + MCP only.
+A single scale-to-zero Modal CPU app keeps a server-side clone of your Obsidian vault current via Headless Sync (`ob`, pull-only by default) and serves that clone to any MCP-speaking agent: read tools always, plus posture-gated write tools. There is no vector index in this repo: keyword search is a live scan of the clone and the link graph is a live walk, so the clone itself is the only source of truth. Semantic search arrives by connecting [modal-embedding-server](https://github.com/kylebrodeur/modal-embedding-server) later; this repo stays vault + MCP only.
 
-Alongside the MCP mount the app exposes `GET /health` (vault + sync triage) and a bearer-gated `POST /admin/sync` (one extra `ob` pull on demand).
+Alongside the MCP mount the app exposes `GET /health` (vault + sync triage) and a bearer-gated admin REST surface (on-demand sync, sync postures, notes write/delete).
 
-## The five MCP tools
+## The MCP tools
+
+Read tools (always available):
 
 | Tool | Purpose |
 |------|---------|
 | `vault.search` | Keyword search over the clone. mode `text` ranks notes live (every query token must match; title hits weigh double). mode `graph` seeds a depth-1 link-graph walk from the top-3 text matches and also returns the walked edges. |
 | `vault.read` | One note's full text and frontmatter; missing notes return `exists: false`, not an error. |
 | `vault.list` | Notes (path + frontmatter), optionally filtered by directory prefix and frontmatter tag. |
-| `vault.query_graph` | Link-graph neighborhood around one seed note within `depth` hops (kind `note-link` only in v1). |
+| `vault.query_graph` | Link-graph neighborhood around one seed note within `depth` hops (kind `note-link` only). |
 | `vault.status` | Sync watermark, live note count, and the semantic-search door. |
 
-Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade to `{"error": ...}` instead of raising, and `vault.status` reports the semantic door as a constant (`"configured": false` with a note pointing at the embedding-server connection) until that connection actually exists. There is no semantic or hybrid mode here, and none stored or computed.
+Write tools (posture-gated; snapshot-first, and in `pull-only` a write is staged locally rather than pushed):
+
+| Tool | Purpose |
+|------|---------|
+| `vault.create_note` | Create a NEW note (refuses an existing path). |
+| `vault.update_note` | Full-text update of an EXISTING note. |
+| `vault.snapshots` | The shadow-git snapshot log (whole vault or one path): the undo ladder. |
+| `vault.revert` | Restore one path's content from a snapshot ref (sha), snapshotting the revert itself. |
+
+Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade to `{"error": ...}` instead of raising, and `vault.status` reports the semantic door as a constant (`"configured": false`) until an embedding connection actually exists. There is no semantic or hybrid mode here, and none stored or computed. Note deletion is not an MCP tool: it rides the bearer-gated `POST /admin/notes/delete` route behind the self-expiring arm window (every delete requires a successful pre-delete snapshot).
 
 ## Quick start
 
@@ -70,6 +81,8 @@ MCP client config sample (streamable HTTP):
 }
 ```
 
+Or skip hand-editing: `scripts/vault-mcp-install.sh --client codex|claude|json|gh` writes the entry through each harness's native surface (`--check`/`--remove` supported), and `scripts/mcp-config.example.json` is the json-mode template. See [docs/SETUP-AND-MCP.md §3](docs/SETUP-AND-MCP.md).
+
 The bearer gate covers `/mcp` and `/admin/*`; an empty `VAULT_API_TOKEN` refuses to serve entirely (fail-closed).
 
 ## First-boot bootstrap (optional)
@@ -78,8 +91,8 @@ Without login state, the server runs and reports degraded honestly. To
 make the FIRST deploy self-provisioning, add `ob` credentials to the
 same Secret; boot then runs the proven sequence - `ob login`
 (argv-flag form; stdin login silently persists nothing outside a TTY),
-optionally `ob sync-setup --path <clone>` for vault linking (e2e
-password only for e2e-encrypted vaults), then
+optionally `ob sync-setup --vault <name> --path <clone> --device-name modal-vault-server`
+for vault linking (e2e password only for e2e-encrypted vaults), then
 `ob sync-config --mode pull-only` (setup defaults to bidirectional;
 this makes the pull-only mode durable so the server clone can never
 push), then the bare `ob sync --path` pull.

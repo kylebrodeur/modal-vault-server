@@ -34,8 +34,8 @@ tools/guards/deploy-provenance.sh <your-overlay-dir>
 
 ```bash
 git fetch --tags
-git checkout <tag>          # v1.2.2 = current release of record
-uv run --project server pytest server/tests -q   # 168 must pass
+git checkout <tag>          # v1.2.4 = current release of record
+uv run --project server pytest server/tests -q   # 169 must pass
 ```
 
 Then re-run the lane's `deploy.sh` (scaled-to-zero posture stays:

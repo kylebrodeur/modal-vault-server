@@ -69,7 +69,8 @@ Key semantics:
 - `VAULT_API_TOKEN` gates `/mcp` and `/admin/*`. Empty/unset = the app refuses to serve (fail-closed).
 - `VAULT_OB_EMAIL`/`VAULT_OB_PASSWORD` enable SELF-bootstrapping: on
   boot, with fresh state, the app runs `ob login` (argv flags), `ob
-  sync-setup --path /vault` (when `VAULT_OB_VAULT` is set), then `ob
+  sync-setup --vault <VAULT_OB_VAULT> --path /vault --device-name
+  modal-vault-server` (when `VAULT_OB_VAULT` is set), then `ob
   sync-config --mode pull-only`, then the first pull. Without them the
   app boots degraded-honest and waits for state to arrive by other
   means.
@@ -123,7 +124,7 @@ Client-matrix notes:
   NATIVE surface, so you never hand-maintain five config copies:
 
   ```bash
-  scripts/vault-mcp-install.sh --client codex   [--url URL] [--token TOKEN]
+  scripts/vault-mcp-install.sh --client codex   [--url URL]   # export VAULT_API_TOKEN; codex reads it at runtime
   scripts/vault-mcp-install.sh --client claude  [--url URL]   # token via ${VAULT_API_TOKEN} expansion
   scripts/vault-mcp-install.sh --client json    [--url URL] [--token TOKEN]  # generic mcpServers payload
   scripts/vault-mcp-install.sh --client gh                    # interactive copilot guidance
@@ -131,6 +132,9 @@ Client-matrix notes:
   scripts/vault-mcp-install.sh --client <any> --remove        # remove the entry
   ```
 
+  Codex mode never takes a literal token: it registers
+  `--bearer-token-env-var VAULT_API_TOKEN`, so export the token. Claude
+  mode writes `${VAULT_API_TOKEN}` expansion into its config file.
   `scripts/mcp-config.example.json` is the json-mode template (placeholder
   workspace + token; never a real value).
 - pi/omp: put exactly the above config in the mcpServers section; the
@@ -140,19 +144,33 @@ Client-matrix notes:
 - Claude Desktop/other stdlib-only clients: use an MCP streamable-HTTP
   bridge if HTTP+servers aren't supported natively.
 
-### The MCP tool surface (v1: read-only)
+### The MCP tool surface
 
-| Tool | Purpose |
-|------|---------|
-| `vault.search` | Keyword search over the clone. mode `text` ranks live (every token must match; title hits weigh double); mode `graph` seeds a depth-1 walk from the top-3 matches and returns walked edges too |
-| `vault.read` | One note's full text + frontmatter; missing notes return `exists: false` (not errors) |
-| `vault.list` | Notes (path + frontmatter), filterable by directory prefix and tag |
-| `vault.query_graph` | Link-graph neighborhood around a seed within `depth` hops (note-link edges) |
-| `vault.status` | Sync watermark, live note count, the semantic-search door (constant `configured:false` until modal-embedding-server connects) |
+| Tool | Kind | Purpose |
+|------|------|---------|
+| `vault.search` | read | Keyword search over the clone. mode `text` ranks live (every token must match; title hits weigh double); mode `graph` seeds a depth-1 walk from the top-3 matches and returns walked edges too |
+| `vault.read` | read | One note's full text + frontmatter; missing notes return `exists: false` (not errors) |
+| `vault.list` | read | Notes (path + frontmatter), filterable by directory prefix and tag |
+| `vault.query_graph` | read | Link-graph neighborhood around a seed within `depth` hops (note-link edges) |
+| `vault.status` | read | Sync watermark, live note count, the semantic-search door (`configured:false` until modal-embedding-server connects) |
+| `vault.create_note` | write | new note (path + full text); refuses existing paths; snapshot-first |
+| `vault.update_note` | write | full-text update of an existing note; snapshot-first |
+| `vault.snapshots` | write | the shadow-git log (the undo ladder; per-path) |
+| `vault.revert` | write | restore one path from a snapshot sha; snapshots the revert itself |
 
+The MCP registry advertises these nine tools. The four write tools are
+posture-aware: in `pull-only` a write is staged locally and the reply
+says so; in `sync-on-write`/`continuous` it syncs per the posture.
 Every reply is a plain JSON dict; errors degrade to `{"error": ...}`
 (never raise). Search is a live scan (no index): clone = source of
 truth; the link graph is a live walk.
+
+Delete is NOT an advertised MCP tool. It rides the bearer-gated
+`POST /admin/notes/delete` route, which works ONLY while the windowed
+delete door is armed (`POST /admin/allow-delete {"action":"arm"}`); the
+door disarms itself when the window expires or the container restarts,
+and every delete requires a successful pre-delete snapshot (no
+snapshot, no delete).
 
 ### Operator verbs (mtk; run ob INSIDE the container, never locally)
 
@@ -175,19 +193,7 @@ Each verb wakes the scale-to-zero app, finds its container, and execs
 your machine; local sync defeats the server's purpose.
 
 Admin REST (bearer-gated, same token) and the MCP write tools share one
-core; the tool surface gains, when the write door is built (v2):
-
-| Tool | Purpose |
-|------|---------|
-| `vault.create_note` | new note (path + full text); refuses existing paths |
-| `vault.update_note` | full-text update of an existing note |
-| `vault.snapshots` | the shadow-git log (the undo ladder; per-path) |
-| `vault.revert` | restore one path from a snapshot sha |
-
-`vault.delete_note` exists ONLY while the windowed delete door is armed
-(`POST /admin/allow-delete {"action":"arm"}`); the door disarms itself
-when the window expires or the container restarts, and every delete
-requires a successful pre-delete snapshot (no snapshot, no delete).
+core.
 
 ### Admin REST (bearer-gated, same token)
 
@@ -213,13 +219,14 @@ and the reply says so.
 
 ## 4. Postures: what each sync mode means
 
-- **pull-only** (default, the v1 safety posture): every sync downloads
+- **pull-only** (default, the safety posture): every sync downloads
   remote changes and `sync-config --mode pull-only` makes it durable -
-  the server clone can never push. Combined with the server having NO
-  write tools in v1, agents cannot alter your vault through this app.
-- **sync-on-write**: for the write door (when enabled server-side):
-  each create/update writes the file, snapshot-commits, then one
-  serialized `ob sync` burst (push + pull). No continuous process.
+  the server clone can never push. The write tools still exist, but in
+  this posture a write is staged locally and the reply says so: nothing
+  an agent writes reaches your remote vault until the posture changes.
+- **sync-on-write**: each create/update writes the file,
+  snapshot-commits, then one serialized `ob sync` burst (push + pull).
+  No continuous process.
 - **continuous**: real-time two-way; an `ob --continuous` daemon owns
   the container (single-writer discipline rides the SyncService lock).
   Cost: the container stays warm while the daemon runs.
@@ -272,11 +279,14 @@ Lanes that stand up their own instance of this server (a project, an
 agent team) integrate WITHOUT touching upstream code:
 
 - **The three options, in order of preference:**
-  1. *Deploy upstream directly.* Set the Secret + env overrides
-     (`MODAL_VAULT_APP_NAME`-style names are in the config layer); no
-     code of your own. Adopt upstream upgrades by pulling + redeploying.
+  1. *Deploy upstream directly* — for STANDALONE public users only. Set
+     the Secret + the `VAULT_*` runtime knobs; the app keeps its default
+     instance names (`server/app.py` fixes the app, Secret, and Volume
+     names in code). Adoption path: pull the tag + redeploy.
   2. *Ship a deploy overlay* (your own repo dir referencing this
-     checkout): set instance env (app name / secret names), and use
+     checkout) — for LANES sharing a workspace with other instances. The
+     overlay composes a distinct app name + secret names (the instance
+     names are deployment wiring there, not config); use
      **`server/hooks`** to hook IN — never monkeypatch upstream modules.
      Hooks are named lifecycle functions:
      - `hooks.register("boot.pre", fn(cfg, sync))` — runs before
@@ -300,10 +310,12 @@ agent team) integrate WITHOUT touching upstream code:
      ```
   3. *Consume the surfaces as a client*: MCP tools for agents; the admin
      REST routes for scripts. No deploy of your own.
-- **Overridable knobs** (config file / env, per `docs/SETUP-AND-MCP.md`):
-  the app name, the Secret name, the Volume name, ob-credential env
-  names. `VAULT_OB_*` accepts the short `OB_*` names too, so existing
-  lanes' Secrets work without remapping.
+- **Runtime knobs** (env, read in the container): the `VAULT_*` variables
+  in §Configuration. The ob-credential knobs accept the short `OB_*`
+  names too (`VAULT_OB_*` wins when both are set), so an existing lane's
+  Secrets work without remapping. The app / Secret / Volume NAMES are
+  NOT runtime-overridable; a lane that needs distinct names uses an
+  overlay (§7 above).
 - **Upgrading an overlay lane** (the writing-duo vault-ob pattern): when
   upstream grows the behavior you monkeypatched, retire your patch and
   register the remainder as hooks (or nothing at all). Then: pull

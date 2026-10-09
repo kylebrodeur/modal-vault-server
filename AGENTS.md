@@ -1,6 +1,6 @@
 # AGENTS.md — modal-vault-server
 
-Agent instructions for THIS repo (v1.2.2 on `main`). The family-wide
+Agent instructions for THIS repo (v1.2.4 on `main`). The family-wide
 rules live in the system workspace's AGENTS.md
 (`modal-toolkit-system/AGENTS.md`); this file is the local copy of the
 rules that matter when you are standing inside this repo.
