@@ -2,6 +2,8 @@
 
 Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read-only in v1).
 
+**Full setup + usage guide: [docs/SETUP-AND-MCP.md](docs/SETUP-AND-MCP.md)** (deploy, secrets, MCP client config, postures, admin REST, troubleshooting).
+
 ![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)
 ![Python](https://img.shields.io/badge/Python-3.12-blue.svg)
 [![Runs on Modal](https://img.shields.io/badge/Runs%20on-Modal-green.svg)](https://modal.com)

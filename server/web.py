@@ -20,13 +20,14 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import mcp.types as mcp_types
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from mcp.server.lowlevel import Server
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
 from server import search_scan
+from server import sync_mode as sync_mode_module
 from server.config import Config
 from server.mcp_tools import VaultTools, sync_state
 from server.sync_service import SyncService
@@ -113,15 +114,67 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     server = build_mcp_server(cfg, tools)
     mcp_asgi: ASGIApp = server.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")
     session_manager = server.session_manager
+    worker = sync_mode_module.ContinuousWorker(cfg.data_dir)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        # Re-apply the persisted mode on every boot (the state dir survives
+        # container restarts; the continuous daemon does NOT): continuous mode
+        # restarts its daemon here, other modes just stop it.
+        with contextlib.suppress(Exception):
+            mode = sync_mode_module.current_mode(cfg.state_dir)
+            if mode == sync_mode_module.MODE_CONTINUOUS:
+                with contextlib.suppress(Exception):
+                    worker.bind_env(cfg.state_dir)
+                    worker.start()
+            else:
+                with contextlib.suppress(Exception):
+                    worker.stop()
         async with session_manager.run():
             yield
 
+    def require_admin(authorization: Annotated[str | None, Header()] = None) -> None:
+        if not _bearer_ok(authorization, cfg.api_token):
+            raise HTTPException(status_code=401, detail="unauthorized", headers={"WWW-Authenticate": _WWW_AUTHENTICATE})
+
+    async def admin_sync_mode(request: Request, authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
+        """Bearer-gated runtime sync-mode flip: {"mode": "pull-only|sync-on-write|continuous"}."""
+        require_admin(authorization)
+        try:
+            body = json.loads((await request.body()).decode("utf-8", errors="replace") or "{}")
+        except json.JSONDecodeError:
+            return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        mode = str(body.get("mode", ""))
+        if mode not in sync_mode_module.MODES:
+            return JSONResponse({"error": f"mode must be one of {list(sync_mode_module.MODES)}"}, status_code=400)
+        out = await asyncio.to_thread(
+            sync_mode_module.apply_mode, mode, cfg.state_dir, cfg.data_dir, sync, worker, cfg.sync_timeout
+        )
+        out["result"] = (
+            {"ok": out["result"].ok, "mode": out["result"].mode, "detail": out["result"].detail}
+            if out.get("result")
+            else None
+        )
+        return JSONResponse(out)
+
+    async def admin_get_sync_mode(authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
+        """Bearer-gated current sync posture (mode + whether the daemon is live)."""
+        require_admin(authorization)
+        mode = sync_mode_module.current_mode(cfg.state_dir)
+        return JSONResponse(
+            {
+                "mode": mode,
+                "continuous_running": worker.is_running(),
+                "continuous_started_at": worker.started_at(),
+            }
+        )
+
     async def health() -> JSONResponse:
-        """Vault + watermark triage; only touches files, so it never raises."""
-        return JSONResponse(web_health(cfg))
+        """Vault + watermark + posture triage; only touches files, so it never raises."""
+        payload = web_health(cfg)
+        payload["sync_mode"] = sync_mode_module.current_mode(cfg.state_dir)
+        payload["continuous_running"] = worker.is_running()
+        return JSONResponse(payload)
 
     async def admin_sync(authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
         """Bearer-gated one ob sync pull, off the event loop; SyncResult as JSON."""
@@ -140,6 +193,8 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     )
     app.get("/health")(health)
     app.post("/admin/sync")(admin_sync)
+    app.post("/admin/sync-mode")(admin_sync_mode)
+    app.get("/admin/sync-mode")(admin_get_sync_mode)
     guarded = BearerGuard(mcp_asgi, cfg.api_token)
     # Two routes for one MCP endpoint: Mount serves sub-paths (Starlette keeps the
     # child's full path and sets root_path, so the SDK's inner Route("/mcp") matches
