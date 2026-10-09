@@ -272,7 +272,16 @@ agent team) integrate WITHOUT touching upstream code:
      Multiple hooks coexist (you can build ON TOP of another lane's
      hook); a hook's errors are contained and reported (they never break
      boot or writes) — the tag list is closed; new tags are upstream
-     work.
+     work. The decorator form reads best in an overlay:
+
+     ```python
+     from server import hooks
+
+     @hooks.on("write.post")
+     def provenance(report: dict) -> None:
+         # every write/delete/revert lands here with the full report
+         ...
+     ```
   3. *Consume the surfaces as a client*: MCP tools for agents; the admin
      REST routes for scripts. No deploy of your own.
 - **Overridable knobs** (config file / env, per `docs/SETUP-AND-MCP.md`):

@@ -34,11 +34,27 @@ REGISTRY: dict[str, list[Callable[..., Any]]] = {tag: [] for tag in (TAG_BOOT_PR
 _last_errors: dict[str, list[str]] = {tag: [] for tag in (TAG_BOOT_PRE, TAG_BOOT_POST, TAG_WRITE_POST)}
 
 
-def register(tag: str, fn: Callable[..., Any]) -> None:
-    """Add a handler for a lifecycle tag (call order: registration order)."""
+def register(tag: str, fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Add a handler for a lifecycle tag (call order: registration order).
+
+    Doubles as a decorator, so a deploy root can write the natural shape:
+
+        @hooks.on("write.post")
+        def log_writes(report: dict) -> None: ...
+    """
     if tag not in REGISTRY:
         raise ValueError(f"unknown hook tag {tag!r}; tags: {sorted(REGISTRY)}")
     REGISTRY[tag].append(fn)
+    return fn
+
+
+def on(tag: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Decorator form of `register`: `@hooks.on("boot.post")`."""
+
+    def _wrap(fn):
+        return register(tag, fn)
+
+    return _wrap
 
 
 def registrations(tag: str) -> list[Callable[..., Any]]:

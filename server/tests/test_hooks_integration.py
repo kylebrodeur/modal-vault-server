@@ -23,6 +23,19 @@ class TestHookRegistry:
         assert calls == ["first", "second"]
         assert errors == []
 
+    def test_on_decorator_registers_and_preserves_fn(self) -> None:
+        calls: list[str] = []
+
+        @hooks.on(hooks.TAG_WRITE_POST)
+        def lane_logger(report: dict) -> None:
+            calls.append(report["path"])
+
+        assert callable(lane_logger)  # the decorated name stays the function
+        errors = hooks.fire(hooks.TAG_WRITE_POST, {"path": "note.md"})
+        assert calls == ["note.md"]
+        assert errors == []
+        hooks.reset()
+
     def test_unknown_tag_refuses(self) -> None:
         hooks.reset()
         with pytest.raises(ValueError, match="unknown hook tag"):
