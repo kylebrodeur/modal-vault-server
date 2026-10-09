@@ -55,6 +55,28 @@ class TestAppWiring:
         for module in _SERVE_IMPORTS:
             assert f'"server.{module}"' in _APP_SOURCE
 
+    def test_serve_module_names_cover_every_server_module(self) -> None:
+        # Image-completeness guard: the container crash-looped at v1.2.2 because
+        # `_SERVE_MODULE_NAMES` omitted the hooks seam modules while every test
+        # (and CI) still passed. Derive the module set from the FILESYSTEM so a
+        # future slice that adds a server/*.py file cannot ship the same class of
+        # unbootable image.
+        server_dir = Path(app_module.__file__).resolve().parent
+        declared = set(app_module._SERVE_MODULE_NAMES)
+        on_disk: set[str] = set()
+        for path in sorted(server_dir.rglob("*.py")):
+            rel = path.relative_to(server_dir)
+            parts = rel.with_suffix("").parts
+            # Skip test scaffolding and any non-package dir (.venv, __pycache__,
+            # hidden caches): only real server.* modules can enter the image.
+            if any(part.startswith(".") or part in ("tests", "__pycache__") for part in parts):
+                continue
+            if parts[-1] == "__init__":
+                continue
+            on_disk.add("server." + ".".join(parts))
+        missing = sorted(on_disk - declared)
+        assert not missing, f"modules imported by the container but absent from _SERVE_MODULE_NAMES: {missing}"
+
     def test_volume_name_version_two(self) -> None:
         assert app_module.VOLUME_NAME == "modal-vault"
         assert app_module.VOLUME_VERSION == 2

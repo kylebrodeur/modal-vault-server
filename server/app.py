@@ -59,6 +59,11 @@ _SERVE_MODULE_NAMES = (
     "server.linker",
     "server.types",
     "server.write_service",
+    # The lifecycle hooks seam (server/hooks.py re-exports the canonical
+    # server/libs/hooks.py). web.py imports it at boot; omitting either left
+    # the deployed image unbootable (ImportError: cannot import name 'hooks').
+    "server.hooks",
+    "server.libs.hooks",
 )
 
 image = (
