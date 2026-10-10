@@ -185,6 +185,16 @@ def observe(report): print(report)
 
 The tag set changes only in this package's releases.
 
+## Operator commands (`mtk`)
+
+This package ships an `mtk vault` command group in `server/mtk-commands.toml`
+(a passthrough to `ob` **inside the container** — nothing ever syncs on the
+operator machine); [modal-toolkit](https://github.com/kylebrodeur/modal-toolkit)
+mounts it when this repo is present in the workspace:
+`mtk vault status | sync | pull-only | sync-on-write | mirror-remote |
+continuous | list-remote | list-local | config | logs | exec`. Full detail in
+[docs/SETUP-AND-MCP.md](docs/SETUP-AND-MCP.md) §3.
+
 ## Part of the Modal Toolkit
 
 Seven standalone Modal utilities from the same author, each extractable and deployable on its own.
@@ -195,7 +205,6 @@ Seven standalone Modal utilities from the same author, each extractable and depl
 - **[modal-finetune-server](https://github.com/kylebrodeur/modal-finetune-server):** Profile-driven LoRA fine-tune and GGUF pipeline with an honest eval gate.
 - **[modal-toolkit](https://github.com/kylebrodeur/modal-toolkit):** One operator CLI (`mtk`) that runs the fleet: `doctor`, `secrets`, `warm --all`, `shutdown --all`, `cost`, `flow`, `dashboard`.
 - **[embed-eval-on-your-vault](https://github.com/kylebrodeur/embed-eval-on-your-vault):** the eval-first pattern (benchmark embedding models on your own data before you deploy) as a single-file, zero-dependency harness.
-- **[modal-vault-server](https://github.com/kylebrodeur/modal-vault-server):** Hosted vault + MCP memory plane: server-side Obsidian clone via Headless Sync with searchable state agents reach over MCP.
 
 ## Built on Modal
 
