@@ -21,7 +21,7 @@ You'll receive an acknowledgment within 72 hours. If you don't hear back, follow
 
 ## Scope Notes
 
-This server gates `/mcp` and `/admin/*` with a bearer token (`VAULT_API_TOKEN`). Reports about the auth middleware, token handling, or the sync subprocess boundary are especially welcome.
+This server gates `/mcp` and `/admin/*` with a bearer token (`MODAL_VAULT_API_TOKEN`). Reports about the auth middleware, token handling, or the sync subprocess boundary are especially welcome.
 
 ## Disclosure Process
 - We'll triage the report, confirm the issue, and work on a fix.

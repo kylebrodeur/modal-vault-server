@@ -1,7 +1,7 @@
 """The embedding-server connection: the vault's semantic-search door, made live.
 
-Config (env via the Secret): `VAULT_EMBEDDING_URL` (the embedding server's
-base URL) + optional `VAULT_EMBEDDING_TOKEN` (bearer for its authed reads).
+Config (env via the Secret): `MODAL_VAULT_EMBEDDING_URL` (the embedding server's
+base URL) + optional `MODAL_VAULT_EMBEDDING_TOKEN` (bearer for its authed reads).
 Connected: `vault.status`'s semantic section flips from the constant
 "configured: false" to a live probe (health + collections count); disconnected:
 unchanged, honest. Unreachable = reported, never raises.
@@ -14,11 +14,11 @@ from typing import Any
 
 _SEMANTIC_DOOR: dict[str, Any] = {
     "configured": False,
-    "note": "connect modal-embedding-server later (VAULT_EMBEDDING_URL in the Secret)",
+    "note": "connect modal-embedding-server later (MODAL_VAULT_EMBEDDING_URL in the Secret)",
 }
 
-_EMBEDDING_ENV = "VAULT_EMBEDDING_URL"
-_TOKEN_ENV = "VAULT_EMBEDDING_TOKEN"
+_EMBEDDING_ENV = "MODAL_VAULT_EMBEDDING_URL"
+_TOKEN_ENV = "MODAL_VAULT_EMBEDDING_TOKEN"
 _PROBE_TIMEOUT_S = 3.0
 
 
@@ -63,5 +63,5 @@ def semantic_section(cfg: Any | None = None, timeout_s: float = _PROBE_TIMEOUT_S
 
 
 def configured() -> bool:
-    """True when VAULT_EMBEDDING_URL is set (the door's constant flips on it)."""
+    """True when MODAL_VAULT_EMBEDDING_URL is set (the door's constant flips on it)."""
     return bool(_base_url())

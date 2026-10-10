@@ -1,8 +1,8 @@
 """Hooks + env-fallback contract tests: the integration seam lanes build on.
 
 Guarantees that matter: unknown-tag registration refuses; hook errors are
-contained + reported (never break boot/write); the OB_* short-name fallback
-resolves with VAULT_OB_* precedence.
+contained + reported (never break boot/write); every knob is a single
+MODAL_VAULT_* name (no legacy short-name fallback).
 """
 
 from __future__ import annotations
@@ -62,24 +62,32 @@ class TestHookRegistry:
         assert hooks.registrations(hooks.TAG_BOOT_PRE) == []
 
 
-class TestConfigNameFallback:
-    def test_short_ob_names_resolve(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for name in ("VAULT_OB_EMAIL", "VAULT_OB_PASSWORD", "OB_EMAIL", "OB_PASSWORD", "VAULT_OB_MFA", "OB_MFA"):
+class TestConfigNameContract:
+    def test_prefixed_ob_names_resolve(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in (
+            "MODAL_VAULT_OB_EMAIL",
+            "MODAL_VAULT_OB_PASSWORD",
+            "MODAL_VAULT_OB_MFA",
+            "MODAL_VAULT_OB_VAULT",
+            "MODAL_VAULT_OB_E2E_PASSWORD",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("MODAL_VAULT_OB_EMAIL", "lane@name")
+        monkeypatch.setenv("MODAL_VAULT_OB_PASSWORD", "lane-pw")
+        monkeypatch.setenv("MODAL_VAULT_OB_VAULT", "LaneVault")
+        cfg = Config.load()
+        assert (cfg.ob_email, cfg.ob_password, cfg.ob_vault) == ("lane@name", "lane-pw", "LaneVault")
+        assert cfg.has_ob_credentials is True
+
+    def test_bare_ob_names_are_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """No legacy short-name fallback: only MODAL_VAULT_* resolves."""
+        for name in ("MODAL_VAULT_OB_EMAIL", "MODAL_VAULT_OB_PASSWORD"):
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setenv("OB_EMAIL", "short@name")
         monkeypatch.setenv("OB_PASSWORD", "short-pw")
-        monkeypatch.setenv("OB_VAULT", "ShortVault")
-        cfg = Config.load()
-        assert (cfg.ob_email, cfg.ob_password, cfg.ob_vault) == ("short@name", "short-pw", "ShortVault")
-        assert cfg.has_ob_credentials is True
+        assert Config.load().has_ob_credentials is False
 
-    def test_vault_prefixed_name_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OB_EMAIL", "short@name")
-        monkeypatch.setenv("VAULT_OB_EMAIL", "prefixed@name")
-        cfg = Config.load()
-        assert cfg.ob_email == "prefixed@name"
-
-    def test_prefix_only_when_unprefixed_unset(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for name in ("VAULT_OB_EMAIL", "OB_EMAIL"):
+    def test_unset_means_no_credentials(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        for name in ("MODAL_VAULT_OB_EMAIL", "MODAL_VAULT_OB_PASSWORD"):
             monkeypatch.delenv(name, raising=False)
         assert Config.load().has_ob_credentials is False

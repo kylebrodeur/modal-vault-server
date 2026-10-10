@@ -1,4 +1,4 @@
-"""Tests for VAULT_* env configuration and shared types."""
+"""Tests for MODAL_VAULT_* env configuration and shared types."""
 
 from pathlib import Path
 from typing import Any
@@ -10,17 +10,17 @@ from server.types import EdgeRow, IndexResult, SyncResult
 
 
 class TestConfigDefaults:
-    """Config.load() with no VAULT_* env set."""
+    """Config.load() with no MODAL_VAULT_* env set."""
 
     def test_load_returns_config_without_any_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("VAULT_API_TOKEN", raising=False)
+        monkeypatch.delenv("MODAL_VAULT_API_TOKEN", raising=False)
         cfg = Config.load()
         assert isinstance(cfg, Config)
 
     def test_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("VAULT_API_TOKEN", raising=False)
-        monkeypatch.delenv("VAULT_DATA_DIR", raising=False)
-        monkeypatch.delenv("VAULT_STATE_DIR", raising=False)
+        monkeypatch.delenv("MODAL_VAULT_API_TOKEN", raising=False)
+        monkeypatch.delenv("MODAL_VAULT_DATA_DIR", raising=False)
+        monkeypatch.delenv("MODAL_VAULT_STATE_DIR", raising=False)
         cfg = Config.load()
         assert cfg.data_dir == Path("/vault")
         assert cfg.state_dir == Path("/vault/state")
@@ -28,26 +28,26 @@ class TestConfigDefaults:
         assert cfg.sync_timeout == 1800
 
     def test_dir_defaults_derive_from_data_dir(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("VAULT_DATA_DIR", "/custom/vault")
-        monkeypatch.delenv("VAULT_STATE_DIR", raising=False)
+        monkeypatch.setenv("MODAL_VAULT_DATA_DIR", "/custom/vault")
+        monkeypatch.delenv("MODAL_VAULT_STATE_DIR", raising=False)
         cfg = Config.load()
         assert cfg.data_dir == Path("/custom/vault")
         assert cfg.state_dir == Path("/custom/vault/state")
 
     def test_api_token_defaults_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Missing VAULT_API_TOKEN does not raise at load; fail-closed-at-boot is app.py's job."""
-        monkeypatch.delenv("VAULT_API_TOKEN", raising=False)
+        """Missing MODAL_VAULT_API_TOKEN does not raise at load; fail-closed-at-boot is app.py's job."""
+        monkeypatch.delenv("MODAL_VAULT_API_TOKEN", raising=False)
         assert Config.load().api_token == ""
 
 
 class TestConfigEnvOverrides:
     def test_all_env_overrides(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any) -> None:
         data, state = tmp_path / "vault", tmp_path / "state"
-        monkeypatch.setenv("VAULT_API_TOKEN", "tok-123")
-        monkeypatch.setenv("VAULT_DATA_DIR", str(data))
-        monkeypatch.setenv("VAULT_STATE_DIR", str(state))
-        monkeypatch.setenv("VAULT_SYNC_MODE", "push")
-        monkeypatch.setenv("VAULT_SYNC_TIMEOUT", "60")
+        monkeypatch.setenv("MODAL_VAULT_API_TOKEN", "tok-123")
+        monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(data))
+        monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(state))
+        monkeypatch.setenv("MODAL_VAULT_SYNC_MODE", "push")
+        monkeypatch.setenv("MODAL_VAULT_SYNC_TIMEOUT", "60")
 
         cfg = Config.load()
         assert cfg.api_token == "tok-123"
@@ -57,12 +57,12 @@ class TestConfigEnvOverrides:
         assert cfg.sync_timeout == 60
 
     def test_explicit_dir_override_wins_over_derivation(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("VAULT_DATA_DIR", "/custom/vault")
-        monkeypatch.setenv("VAULT_STATE_DIR", "/elsewhere/state")
+        monkeypatch.setenv("MODAL_VAULT_DATA_DIR", "/custom/vault")
+        monkeypatch.setenv("MODAL_VAULT_STATE_DIR", "/elsewhere/state")
         assert Config.load().state_dir == Path("/elsewhere/state")
 
     def test_token_values_round_trip(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("VAULT_API_TOKEN", "  secret-with-specials_#@$  ")
+        monkeypatch.setenv("MODAL_VAULT_API_TOKEN", "  secret-with-specials_#@$  ")
         assert Config.load().api_token == "  secret-with-specials_#@$  "
 
 

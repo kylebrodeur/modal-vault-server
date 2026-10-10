@@ -224,7 +224,7 @@ class TestStatusTool:
             "notes": 4,
             "semantic": {
                 "configured": False,
-                "note": "connect modal-embedding-server later (VAULT_EMBEDDING_URL in the Secret)",
+                "note": "connect modal-embedding-server later (MODAL_VAULT_EMBEDDING_URL in the Secret)",
             },
         }
 

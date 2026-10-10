@@ -46,7 +46,7 @@ repo root on `PYTHONPATH`. Never run anything from INSIDE `server/`
 
 ### 2.2 The Secret
 
-`modal-vault-secret` carries the bearer (`VAULT_API_TOKEN`, REQUIRED)
+`modal-vault-secret` carries the bearer (`MODAL_VAULT_API_TOKEN`, REQUIRED)
 and, optionally, the first-boot `ob` credentials. Two ways:
 
 ```bash
@@ -56,27 +56,27 @@ mtk secrets create --pkg vault
 
 # or by hand:
 modal secret create modal-vault-secret \
-  VAULT_API_TOKEN=$(openssl rand -hex 32) \
-  VAULT_OB_EMAIL=you@example.com \
-  VAULT_OB_PASSWORD='...' \
-  VAULT_OB_MFA='' \
-  VAULT_OB_VAULT='Personal' \
-  VAULT_OB_E2E_PASSWORD=''
+  MODAL_VAULT_API_TOKEN=$(openssl rand -hex 32) \
+  MODAL_VAULT_OB_EMAIL=you@example.com \
+  MODAL_VAULT_OB_PASSWORD='...' \
+  MODAL_VAULT_OB_MFA='' \
+  MODAL_VAULT_OB_VAULT='Personal' \
+  MODAL_VAULT_OB_E2E_PASSWORD=''
 ```
 
 Key semantics:
 
-- `VAULT_API_TOKEN` gates `/mcp` and `/admin/*`. Empty/unset = the app refuses to serve (fail-closed).
-- `VAULT_OB_EMAIL`/`VAULT_OB_PASSWORD` enable SELF-bootstrapping: on
+- `MODAL_VAULT_API_TOKEN` gates `/mcp` and `/admin/*`. Empty/unset = the app refuses to serve (fail-closed).
+- `MODAL_VAULT_OB_EMAIL`/`MODAL_VAULT_OB_PASSWORD` enable SELF-bootstrapping: on
   boot, with fresh state, the app runs `ob login` (argv flags), `ob
-  sync-setup --vault <VAULT_OB_VAULT> --path /vault --device-name
-  modal-vault-server` (when `VAULT_OB_VAULT` is set), then `ob
+  sync-setup --vault <MODAL_VAULT_OB_VAULT> --path /vault --device-name
+  modal-vault-server` (when `MODAL_VAULT_OB_VAULT` is set), then `ob
   sync-config --mode pull-only`, then the first pull. Without them the
   app boots degraded-honest and waits for state to arrive by other
   means.
-- `VAULT_OB_MFA`: only for accounts with MFA (an MFA CODE is login-time;
+- `MODAL_VAULT_OB_MFA`: only for accounts with MFA (an MFA CODE is login-time;
   TOTPs time out - prefer no-MFA accounts or service flows).
-- `VAULT_OB_E2E_PASSWORD`: only for e2e-encrypted vaults (setup's
+- `MODAL_VAULT_OB_E2E_PASSWORD`: only for e2e-encrypted vaults (setup's
   `--password`).
 
 Rotation note: Modal secrets CANNOT be read back. `mtk secrets rotate
@@ -111,7 +111,7 @@ Any MCP-speaking client (streamable HTTP + bearer header):
       "type": "http",
       "url": "https://<workspace>--modal-vault-server-serve.modal.run/mcp",
       "headers": {
-        "Authorization": "Bearer <VAULT_API_TOKEN>"
+        "Authorization": "Bearer <MODAL_VAULT_API_TOKEN>"
       }
     }
   }
@@ -124,8 +124,8 @@ Client-matrix notes:
   NATIVE surface, so you never hand-maintain five config copies:
 
   ```bash
-  scripts/vault-mcp-install.sh --client codex   [--url URL]   # export VAULT_API_TOKEN; codex reads it at runtime
-  scripts/vault-mcp-install.sh --client claude  [--url URL]   # token via ${VAULT_API_TOKEN} expansion
+  scripts/vault-mcp-install.sh --client codex   [--url URL]   # export MODAL_VAULT_API_TOKEN; codex reads it at runtime
+  scripts/vault-mcp-install.sh --client claude  [--url URL]   # token via ${MODAL_VAULT_API_TOKEN} expansion
   scripts/vault-mcp-install.sh --client json    [--url URL] [--token TOKEN]  # generic mcpServers payload
   scripts/vault-mcp-install.sh --client gh                    # interactive copilot guidance
   scripts/vault-mcp-install.sh --client <any> --check         # dry-run, write nothing
@@ -133,8 +133,8 @@ Client-matrix notes:
   ```
 
   Codex mode never takes a literal token: it registers
-  `--bearer-token-env-var VAULT_API_TOKEN`, so export the token. Claude
-  mode writes `${VAULT_API_TOKEN}` expansion into its config file.
+  `--bearer-token-env-var MODAL_VAULT_API_TOKEN`, so export the token. Claude
+  mode writes `${MODAL_VAULT_API_TOKEN}` expansion into its config file.
   `scripts/mcp-config.example.json` is the json-mode template (placeholder
   workspace + token; never a real value).
 - pi/omp: put exactly the above config in the mcpServers section; the
@@ -242,7 +242,7 @@ layer, restorable today from the desktop app.
 One Modal Volume (v2), everything on it:
 
 ```
-/vault                 (VAULT_DATA_DIR; the clone)
+/vault                 (MODAL_VAULT_DATA_DIR; the clone)
 ├── 00-system/…        (your vault's folders - the clone IS the truth)
 └── state/
     ├── obsidian-headless/   (ob login state + sync config; the XDG root)
@@ -262,9 +262,9 @@ boots serve without re-login.
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
 | `health` 401 on `/admin/*` or MCP | wrong/old bearer | read the CURRENT token from the Secret (rotations regenerate it); restart warm containers after rotation |
-| App stuck `initializing`, URLs 404 | missing Secret/keys | check `modal-vault-secret` exists with `VAULT_API_TOKEN` |
+| App stuck `initializing`, URLs 404 | missing Secret/keys | check `modal-vault-secret` exists with `MODAL_VAULT_API_TOKEN` |
 | `status degraded`, `vault:true`, `sync.ok:false` | the boot pull failed | `mtk vault status` + `mtk vault logs`; re-run `mtk vault sync` |
-| boot pull fails with argv errors | credentials missing (no secret ob keys) | add `VAULT_OB_*` keys (+ `--force` recreate; all bearers rotate) |
+| boot pull fails with argv errors | credentials missing (no secret ob keys) | add `MODAL_VAULT_OB_*` keys (+ `--force` recreate; all bearers rotate) |
 | login "succeeds" but nothing persists | you piped login via stdin | use argv flags (the server does this already) |
 | `sync` errors mention `--mode` | something passed `--mode` to `sync` (invalid) | mode belongs to `sync-config`; `mtk vault pull-only` |
 | clone exists but is empty | first pull hasn't finished | the first pull takes ~100s for big vaults; watch `mtk vault status` |
@@ -280,7 +280,7 @@ agent team) integrate WITHOUT touching upstream code:
 
 - **The three options, in order of preference:**
   1. *Deploy upstream directly* — for STANDALONE public users only. Set
-     the Secret + the `VAULT_*` runtime knobs; the app keeps its default
+     the Secret + the `MODAL_VAULT_*` runtime knobs; the app keeps its default
      instance names (`server/app.py` fixes the app, Secret, and Volume
      names in code). Adoption path: pull the tag + redeploy.
   2. *Ship a deploy overlay* (your own repo dir referencing this
@@ -310,9 +310,9 @@ agent team) integrate WITHOUT touching upstream code:
      ```
   3. *Consume the surfaces as a client*: MCP tools for agents; the admin
      REST routes for scripts. No deploy of your own.
-- **Runtime knobs** (env, read in the container): the `VAULT_*` variables
+- **Runtime knobs** (env, read in the container): the `MODAL_VAULT_*` variables
   in §Configuration. The ob-credential knobs accept the short `OB_*`
-  names too (`VAULT_OB_*` wins when both are set), so an existing lane's
+  names too (`MODAL_VAULT_OB_*` wins when both are set), so an existing lane's
   Secrets work without remapping. The app / Secret / Volume NAMES are
   NOT runtime-overridable; a lane that needs distinct names uses an
   overlay (§7 above).
@@ -330,5 +330,5 @@ agent team) integrate WITHOUT touching upstream code:
 Shipped since v1.1.0: runtime-mutable sync postures (`/admin/sync-mode`),
 the shadow-git snapshot layer, the MCP write tools +
 `POST /admin/notes`, and the windowed delete door. Open work: hybrid
-semantic ranking (the `vault.status` door is live when `VAULT_EMBEDDING_URL`
+semantic ranking (the `vault.status` door is live when `MODAL_VAULT_EMBEDDING_URL`
 is set; ranking over it comes next) and the ledger/memory-plane door.

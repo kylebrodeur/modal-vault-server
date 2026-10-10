@@ -43,9 +43,11 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path) -> Env:
 def _cfg(monkeypatch: pytest.MonkeyPatch, **overrides: str) -> Config:
     for key, value in {"email": "a@b.c", "password": "pw", "vault": "V"}.items():
         value = overrides.pop(key, value)
-        monkeypatch.setenv("VAULT_OB_" + key.upper(), value)
+        monkeypatch.setenv("MODAL_VAULT_OB_" + key.upper(), value)
     for key, value in overrides.items():
-        name = {"e2e_password": "VAULT_OB_E2E_PASSWORD", "mfa": "VAULT_OB_MFA"}.get(key, "VAULT_OB_" + key.upper())
+        name = {"e2e_password": "MODAL_VAULT_OB_E2E_PASSWORD", "mfa": "MODAL_VAULT_OB_MFA"}.get(
+            key, "MODAL_VAULT_OB_" + key.upper()
+        )
         monkeypatch.setenv(name, value) if value else monkeypatch.delenv(name, raising=False)
     return Config.load()
 

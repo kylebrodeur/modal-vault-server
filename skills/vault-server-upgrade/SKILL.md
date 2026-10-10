@@ -46,8 +46,9 @@ lane state and can misalign tags.
 ## Bootstrap + secrets (the overlay carries them)
 
 - The app self-bootstraps on first boot from the Secret's five
-  `VAULT_OB_*` keys (argv login, state-root fixed upstream; the
-  writing-duo wrapper may keep precedence for its `OB_*` names).
+  `MODAL_VAULT_OB_*` keys (argv login, state-root fixed upstream). One
+  vocabulary: no short `OB_*` fallback (removed so a shell export can
+  never resolve to another server's value).
 - Secret NAMES are public, values never written; manifests in
   `server/secrets.toml`. Rotation = `mtk secrets rotate` (invalidates
   live users — flag it).

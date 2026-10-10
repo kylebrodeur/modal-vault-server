@@ -37,13 +37,13 @@ def boot_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> BootEnv:
     log = tmp_path / "ob.log"
     monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ.get('PATH', '')}")
     monkeypatch.setenv("OB_FAKE_LOG", str(log))
-    monkeypatch.setenv("VAULT_DATA_DIR", str(workspace))
-    monkeypatch.setenv("VAULT_STATE_DIR", str(state))
-    monkeypatch.delenv("VAULT_OB_EMAIL", raising=False)
-    monkeypatch.delenv("VAULT_OB_PASSWORD", raising=False)
-    monkeypatch.delenv("VAULT_OB_MFA", raising=False)
-    monkeypatch.delenv("VAULT_OB_VAULT", raising=False)
-    monkeypatch.delenv("VAULT_OB_E2E_PASSWORD", raising=False)
+    monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(workspace))
+    monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(state))
+    monkeypatch.delenv("MODAL_VAULT_OB_EMAIL", raising=False)
+    monkeypatch.delenv("MODAL_VAULT_OB_PASSWORD", raising=False)
+    monkeypatch.delenv("MODAL_VAULT_OB_MFA", raising=False)
+    monkeypatch.delenv("MODAL_VAULT_OB_VAULT", raising=False)
+    monkeypatch.delenv("MODAL_VAULT_OB_E2E_PASSWORD", raising=False)
     return BootEnv(workspace, state, log, SyncService(workspace, state))
 
 
@@ -52,13 +52,15 @@ def _cfg(env: BootEnv, monkeypatch: pytest.MonkeyPatch, **overrides: str) -> Con
     defaults = {"email": "kyle@example.com", "password": "hunter2"}
     for key, default in defaults.items():
         value = overrides.pop(key, default)
-        env_name = "VAULT_OB_" + key.upper()
+        env_name = "MODAL_VAULT_OB_" + key.upper()
         if value:
             monkeypatch.setenv(env_name, value)
         else:
             monkeypatch.delenv(env_name, raising=False)
     for key, value in overrides.items():
-        env_name = {"e2e_password": "VAULT_OB_E2E_PASSWORD", "mfa": "VAULT_OB_MFA"}.get(key, "VAULT_OB_" + key.upper())
+        env_name = {"e2e_password": "MODAL_VAULT_OB_E2E_PASSWORD", "mfa": "MODAL_VAULT_OB_MFA"}.get(
+            key, "MODAL_VAULT_OB_" + key.upper()
+        )
         if value:
             monkeypatch.setenv(env_name, value)
         else:
@@ -140,7 +142,7 @@ class TestFirstBootBootstrap:
     def test_missing_credentials_skips_login_pull_anyway(
         self, boot_env: BootEnv, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("VAULT_OB_EMAIL", raising=False)
+        monkeypatch.delenv("MODAL_VAULT_OB_EMAIL", raising=False)
         cfg = Config.load()
         entry = run_boot(cfg, boot_env.sync)
         log = boot_env.log.read_text()
@@ -182,16 +184,22 @@ class TestFirstBootBootstrap:
 
 class TestConfigKnobs:
     def test_ob_knobs_read_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("VAULT_OB_EMAIL", "a@b.c")
-        monkeypatch.setenv("VAULT_OB_PASSWORD", "pw")
-        monkeypatch.setenv("VAULT_OB_MFA", "999999")
-        monkeypatch.setenv("VAULT_OB_VAULT", "V")
-        monkeypatch.setenv("VAULT_OB_E2E_PASSWORD", "E")
+        monkeypatch.setenv("MODAL_VAULT_OB_EMAIL", "a@b.c")
+        monkeypatch.setenv("MODAL_VAULT_OB_PASSWORD", "pw")
+        monkeypatch.setenv("MODAL_VAULT_OB_MFA", "999999")
+        monkeypatch.setenv("MODAL_VAULT_OB_VAULT", "V")
+        monkeypatch.setenv("MODAL_VAULT_OB_E2E_PASSWORD", "E")
         cfg = Config.load()
         assert cfg.has_ob_credentials is True
         assert (cfg.ob_mfa, cfg.ob_vault, cfg.ob_e2e_password) == ("999999", "V", "E")
 
     def test_no_credentials_is_falsy(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        for key in ("VAULT_OB_EMAIL", "VAULT_OB_PASSWORD", "VAULT_OB_MFA", "VAULT_OB_VAULT", "VAULT_OB_E2E_PASSWORD"):
+        for key in (
+            "MODAL_VAULT_OB_EMAIL",
+            "MODAL_VAULT_OB_PASSWORD",
+            "MODAL_VAULT_OB_MFA",
+            "MODAL_VAULT_OB_VAULT",
+            "MODAL_VAULT_OB_E2E_PASSWORD",
+        ):
             monkeypatch.delenv(key, raising=False)
         assert Config.load().has_ob_credentials is False

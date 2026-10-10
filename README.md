@@ -50,7 +50,7 @@ modal setup                # one-time: authenticate with Modal
 mtk secrets check
 mtk secrets create --pkg vault
 
-modal secret create modal-vault-secret VAULT_API_TOKEN=$(openssl rand -hex 32)
+modal secret create modal-vault-secret MODAL_VAULT_API_TOKEN=$(openssl rand -hex 32)
 
 PYTHONPATH=$PWD server/.venv/bin/modal deploy server/app.py
 ```
@@ -74,7 +74,7 @@ MCP client config sample (streamable HTTP):
       "type": "http",
       "url": "https://<workspace>--modal-vault-server-serve.modal.run/mcp",
       "headers": {
-        "Authorization": "Bearer <VAULT_API_TOKEN>"
+        "Authorization": "Bearer <MODAL_VAULT_API_TOKEN>"
       }
     }
   }
@@ -83,7 +83,7 @@ MCP client config sample (streamable HTTP):
 
 Or skip hand-editing: `scripts/vault-mcp-install.sh --client codex|claude|json|gh` writes the entry through each harness's native surface (`--check`/`--remove` supported), and `scripts/mcp-config.example.json` is the json-mode template. See [docs/SETUP-AND-MCP.md §3](docs/SETUP-AND-MCP.md).
 
-The bearer gate covers `/mcp` and `/admin/*`; an empty `VAULT_API_TOKEN` refuses to serve entirely (fail-closed).
+The bearer gate covers `/mcp` and `/admin/*`; an empty `MODAL_VAULT_API_TOKEN` refuses to serve entirely (fail-closed).
 
 ## First-boot bootstrap (optional)
 
@@ -108,19 +108,19 @@ no values).
 
 ## Configuration
 
-Every knob uses the `VAULT_` prefix and is read from env inside the container (the Modal Secret supplies `VAULT_API_TOKEN`).
+Every knob uses the `MODAL_VAULT_` prefix and is read from env inside the container (the Modal Secret supplies `MODAL_VAULT_API_TOKEN`).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VAULT_API_TOKEN` | Bearer token gating `/mcp` and `/admin/*`; required, never empty in serving | unset (refuses to serve) |
-| `VAULT_DATA_DIR` | Vault clone root | `/vault` |
-| `VAULT_STATE_DIR` | `ob` login state root (set as `XDG_CONFIG_HOME`; obsidian-headless reads `$XDG_CONFIG_HOME/obsidian-headless`, not `OB_STATE`) + sync watermark | `<data_dir>/state` |
-| `VAULT_SYNC_MODE` | Sync direction for the `ob` pull | `pull-only` |
-| `VAULT_SYNC_TIMEOUT` | Seconds before a one-shot pull times out | `1800` |
-| `VAULT_OB_EMAIL` / `VAULT_OB_PASSWORD` | Optional first-boot `ob login` credentials (in the Secret); absent = no bootstrap, degraded until state arrives | unset |
-| `VAULT_OB_MFA` | MFA code when the account has MFA (login-time) | unset |
-| `VAULT_OB_VAULT` | Sync vault name; set to run `sync-setup` on first boot | unset |
-| `VAULT_OB_E2E_PASSWORD` | End-to-end encryption password; only for e2e-encrypted vaults | unset |
+| `MODAL_VAULT_API_TOKEN` | Bearer token gating `/mcp` and `/admin/*`; required, never empty in serving | unset (refuses to serve) |
+| `MODAL_VAULT_DATA_DIR` | Vault clone root | `/vault` |
+| `MODAL_VAULT_STATE_DIR` | `ob` login state root (set as `XDG_CONFIG_HOME`; obsidian-headless reads `$XDG_CONFIG_HOME/obsidian-headless`, not `OB_STATE`) + sync watermark | `<data_dir>/state` |
+| `MODAL_VAULT_SYNC_MODE` | Sync direction for the `ob` pull | `pull-only` |
+| `MODAL_VAULT_SYNC_TIMEOUT` | Seconds before a one-shot pull times out | `1800` |
+| `MODAL_VAULT_OB_EMAIL` / `MODAL_VAULT_OB_PASSWORD` | Optional first-boot `ob login` credentials (in the Secret); absent = no bootstrap, degraded until state arrives | unset |
+| `MODAL_VAULT_OB_MFA` | MFA code when the account has MFA (login-time) | unset |
+| `MODAL_VAULT_OB_VAULT` | Sync vault name; set to run `sync-setup` on first boot | unset |
+| `MODAL_VAULT_OB_E2E_PASSWORD` | End-to-end encryption password; only for e2e-encrypted vaults | unset |
 
 Volume layout: one Modal Volume (v2) carries everything. `/vault` is the clone; `/state` (login state + watermark) is a symlink into `/vault/state` because Modal forbids mounting one Volume at two roots.
 
@@ -143,7 +143,7 @@ Volume layout: one Modal Volume (v2) carries everything. `/vault` is the clone; 
   `/admin/notes/delete`, `/admin/allow-delete` — same core as MCP.
 
 Still open: semantic search (the `vault.status` door goes live when
-`VAULT_EMBEDDING_URL` lands in the Secret; hybrid ranking comes after),
+`MODAL_VAULT_EMBEDDING_URL` lands in the Secret; hybrid ranking comes after),
 the ledger/memory-plane door.
 
 ## Lifecycle hooks

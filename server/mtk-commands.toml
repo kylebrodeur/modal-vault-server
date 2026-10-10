@@ -1,0 +1,72 @@
+# Operator commands for `mtk vault`, mounted by the toolkit's command host
+# (modal-toolkit/toolkit/pkg_commands.py). Inert data: the server never reads it.
+#
+# Every command is an operator passthrough to `ob` INSIDE the modal-vault-server
+# container: the ob binary, its login state, and the vault clone all live in the
+# Modal container (Volume-backed). Nothing ever syncs on the operator machine.
+# Kind "container" wakes the app, picks ITS live container, execs the command,
+# and re-wakes on a lost scale-to-zero race. The ob clone lives at /vault and
+# reads its config from XDG_CONFIG_HOME=/vault/state.
+
+[defaults]
+kind = "container"
+app = "modal-vault-server"
+xdg = "/vault/state"
+requires = ["base_url"]
+
+[[command]]
+name = "status"
+summary = "ob sync-status: the clone's current sync state"
+argv = ["ob", "sync-status", "--path", "/vault"]
+
+[[command]]
+name = "sync"
+summary = "one-shot sync of the clone"
+argv = ["ob", "sync", "--path", "/vault"]
+
+[[command]]
+name = "pull-only"
+summary = "set the sync mode to pull-only (the safe default)"
+argv = ["ob", "sync-config", "--mode", "pull-only", "--path", "/vault"]
+
+[[command]]
+name = "sync-on-write"
+summary = "set the sync mode to bidirectional (push on write)"
+argv = ["ob", "sync-config", "--mode", "bidirectional", "--path", "/vault"]
+
+[[command]]
+name = "mirror-remote"
+summary = "set the sync mode to mirror-remote"
+argv = ["ob", "sync-config", "--mode", "mirror-remote", "--path", "/vault"]
+
+[[command]]
+name = "continuous"
+summary = "run a continuous sync loop"
+argv = ["ob", "sync", "--path", "/vault", "--continuous"]
+
+[[command]]
+name = "list-remote"
+summary = "list remote vaults the account can sync"
+argv = ["ob", "sync-list-remote"]
+
+[[command]]
+name = "list-local"
+summary = "list the local clones ob manages"
+argv = ["ob", "sync-list-local"]
+
+[[command]]
+name = "config"
+summary = "show the clone's sync config (extra args pass through to ob)"
+argv = ["ob", "sync-config", "--path", "/vault"]
+passthrough = true
+
+[[command]]
+name = "logs"
+summary = "tail the sync log inside the container"
+argv = ["tail -n 40 /vault/state/obsidian-headless/sync/*/sync.log 2>/dev/null || true"]
+
+[[command]]
+name = "exec"
+summary = "run any ob subcommand inside the container (e.g. `mtk vault exec sync-config ...`)"
+argv = ["ob"]
+passthrough = true

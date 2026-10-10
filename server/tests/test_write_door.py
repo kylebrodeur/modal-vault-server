@@ -44,8 +44,8 @@ def _fake_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Pa
     log = tmp_path / "ob.log"
     monkeypatch.setenv("PATH", f"{shim.parent}{__import__('os').pathsep}{__import__('os').environ.get('PATH', '')}")
     monkeypatch.setenv("OB_FAKE_LOG", str(log))
-    monkeypatch.setenv("VAULT_DATA_DIR", str(workspace))
-    monkeypatch.setenv("VAULT_STATE_DIR", str(state))
+    monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(workspace))
+    monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(state))
     return workspace, state, log
 
 

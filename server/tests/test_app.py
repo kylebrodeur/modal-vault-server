@@ -2,7 +2,7 @@
 
 No deploy, no network: module wiring is asserted at import (the Modal objects are
 real) and the serve() build path is exercised through ``_build_serving_app`` with
-VAULT_* env + the fake ``ob`` shim on PATH, mirroring web.py's boot-before-serve
+MODAL_VAULT_* env + the fake ``ob`` shim on PATH, mirroring web.py's boot-before-serve
 harness.
 """
 
@@ -83,10 +83,13 @@ class TestAppWiring:
         assert "version=VOLUME_VERSION" in _APP_SOURCE or "version=2" in _APP_SOURCE
 
     def test_volume_mounts_match_env(self) -> None:
-        assert app_module.VAULT_DATA_DIR == "/vault"
-        assert app_module.VAULT_STATE_DIR == "/state"
-        assert 'VAULT_DATA_DIR"] = "/vault"' in _APP_SOURCE or '.env({"VAULT_DATA_DIR": "/vault"' in _APP_SOURCE
-        assert 'VAULT_STATE_DIR"] = "/state"' in _APP_SOURCE or '"VAULT_STATE_DIR": "/state"' in _APP_SOURCE
+        assert app_module.MODAL_VAULT_DATA_DIR == "/vault"
+        assert app_module.MODAL_VAULT_STATE_DIR == "/state"
+        assert (
+            'MODAL_VAULT_DATA_DIR"] = "/vault"' in _APP_SOURCE
+            or '.env({"MODAL_VAULT_DATA_DIR": "/vault"' in _APP_SOURCE
+        )
+        assert 'MODAL_VAULT_STATE_DIR"] = "/state"' in _APP_SOURCE or '"MODAL_VAULT_STATE_DIR": "/state"' in _APP_SOURCE
 
     def test_secret_name(self) -> None:
         assert app_module.SECRET_NAME == "modal-vault-secret"
@@ -100,7 +103,7 @@ class TestAppWiring:
     def test_serve_function_mounts_our_volume_and_secret(self) -> None:
         # Object-level: the serve Function is wired to the Volume/Secret objects this module creates.
         # One mount point (/vault); /state reaches the Volume through the image symlink.
-        assert {app_module.VAULT_DATA_DIR: app_module.vault_volume} == app_module._SERVE_VOLUMES
+        assert {app_module.MODAL_VAULT_DATA_DIR: app_module.vault_volume} == app_module._SERVE_VOLUMES
         assert app_module.vault_volume.name == app_module.VOLUME_NAME
         assert app_module.vault_secret.name == app_module.SECRET_NAME
         assert app_module.app.name == app_module.APP_NAME
@@ -116,26 +119,26 @@ def _env_with_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     state_dir = tmp_path / "state"
     vault_dir.mkdir()
     state_dir.mkdir()
-    monkeypatch.setenv("VAULT_API_TOKEN", "tok")
-    monkeypatch.setenv("VAULT_DATA_DIR", str(vault_dir))
-    monkeypatch.setenv("VAULT_STATE_DIR", str(state_dir))
+    monkeypatch.setenv("MODAL_VAULT_API_TOKEN", "tok")
+    monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(vault_dir))
+    monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(state_dir))
 
 
 class TestServeBuildPath:
     """serve()'s underlying build path: fail-closed token gate, boot, then build_app."""
 
     def test_missing_token_raises_loudly(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.delenv("VAULT_API_TOKEN", raising=False)
-        monkeypatch.setenv("VAULT_DATA_DIR", str(tmp_path / "vault"))
-        monkeypatch.setenv("VAULT_STATE_DIR", str(tmp_path / "state"))
-        with pytest.raises(RuntimeError, match="VAULT_API_TOKEN"):
+        monkeypatch.delenv("MODAL_VAULT_API_TOKEN", raising=False)
+        monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(tmp_path / "vault"))
+        monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(tmp_path / "state"))
+        with pytest.raises(RuntimeError, match="MODAL_VAULT_API_TOKEN"):
             _build_serving_app()
 
     def test_empty_token_raises_loudly(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.setenv("VAULT_API_TOKEN", "")
-        monkeypatch.setenv("VAULT_DATA_DIR", str(tmp_path / "vault"))
-        monkeypatch.setenv("VAULT_STATE_DIR", str(tmp_path / "state"))
-        with pytest.raises(RuntimeError, match="VAULT_API_TOKEN"):
+        monkeypatch.setenv("MODAL_VAULT_API_TOKEN", "")
+        monkeypatch.setenv("MODAL_VAULT_DATA_DIR", str(tmp_path / "vault"))
+        monkeypatch.setenv("MODAL_VAULT_STATE_DIR", str(tmp_path / "state"))
+        with pytest.raises(RuntimeError, match="MODAL_VAULT_API_TOKEN"):
             _build_serving_app()
 
     def test_with_token_returns_fastapi_with_mcp_mount(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

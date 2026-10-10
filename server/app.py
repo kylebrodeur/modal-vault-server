@@ -18,7 +18,7 @@ The HTTP contract lives in web.py (importable without the Modal SDK so it can
 be tested with a TestClient); this file wires it to the Modal Volume, Secret,
 and the scale-to-zero web function. Boot pulls once (failures are contained by
 design: last-good clone keeps serving, /health reports degraded) and serving is
-fail-closed: without VAULT_API_TOKEN the build raises and nothing serves.
+fail-closed: without MODAL_VAULT_API_TOKEN the build raises and nothing serves.
 """
 
 from __future__ import annotations
@@ -37,12 +37,12 @@ SECRET_NAME = "modal-vault-secret"
 VOLUME_NAME = "modal-vault"
 VOLUME_VERSION = 2
 
-# Env contract: the image exports the mount roots as VAULT_* env vars, so
+# Env contract: the image exports the mount roots as MODAL_VAULT_* env vars, so
 # Config.load() inside the container reads exactly these paths. /state reaches
 # the Volume via the image's /state -> /vault/state symlink (Modal forbids
 # mounting one Volume at two roots); ob login state + watermark persist.
-VAULT_DATA_DIR = "/vault"
-VAULT_STATE_DIR = "/state"
+MODAL_VAULT_DATA_DIR = "/vault"
+MODAL_VAULT_STATE_DIR = "/state"
 
 # Modules the container imports at serve() time (plus this one);
 # `server.*` package imports resolve because the package root ships with the image.
@@ -78,7 +78,7 @@ image = (
         "npm install -g obsidian-headless@0.0.14",
         "ob --version",  # build gate: fail the image build if the ob binary is missing
     )
-    .env({"VAULT_DATA_DIR": "/vault", "VAULT_STATE_DIR": "/state"})
+    .env({"MODAL_VAULT_DATA_DIR": "/vault", "MODAL_VAULT_STATE_DIR": "/state"})
     .add_local_python_source(*_SERVE_MODULE_NAMES)
 )
 
@@ -88,13 +88,13 @@ vault_volume = modal.Volume.from_name(VOLUME_NAME, create_if_missing=True, versi
 
 vault_secret = modal.Secret.from_name(SECRET_NAME)
 
-_SERVE_VOLUMES = {VAULT_DATA_DIR: vault_volume}
+_SERVE_VOLUMES = {MODAL_VAULT_DATA_DIR: vault_volume}
 
 
 def _build_serving_app() -> FastAPI:
     """Config + SyncService + boot + FastAPI; the whole serve() body minus Modal.
 
-    Fail-closed at boot: an empty/missing VAULT_API_TOKEN raises (loud, no
+    Fail-closed at boot: an empty/missing MODAL_VAULT_API_TOKEN raises (loud, no
     serving) - the bearer gates on /mcp and /admin/* must never run with a
     blank token that would reject everything anyway. Boot sync failures are
     contained by run_boot's design (degraded /health, last-good clone serves).
@@ -102,7 +102,7 @@ def _build_serving_app() -> FastAPI:
     cfg = Config.load()
     if not cfg.api_token:
         raise RuntimeError(
-            "VAULT_API_TOKEN is empty: refusing to serve. Put the bearer token in the modal-vault-secret Secret."
+            "MODAL_VAULT_API_TOKEN is empty: refusing to serve. Put the bearer token in the modal-vault-secret Secret."
         )
     sync = SyncService(cfg.data_dir, cfg.state_dir)
     run_boot(cfg, sync)
