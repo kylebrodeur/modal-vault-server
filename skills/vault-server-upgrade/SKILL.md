@@ -43,6 +43,27 @@ Kyle's ruling = the live vault stays OFF until he says otherwise).
 NEVER `git reset`/re-clone to "fix" the version — that wipes local
 lane state and can misalign tags.
 
+**Crossing v1.3.0 is BREAKING for lanes pinned at v1.2.4.** v1.3.0
+renamed every knob to `MODAL_VAULT_*` with NO legacy fallback: the
+Secret must be REBUILT with the new key names (`MODAL_VAULT_API_TOKEN`
++ the five `MODAL_VAULT_OB_*`) BEFORE deploying anything v1.3.0+ — the
+app is fail-closed without `MODAL_VAULT_API_TOKEN`. Rebuilding the
+Secret rotates the bearer, so every MCP client must pick up the new
+token. v1.4.0 (OAuth) is additive on top: `MODAL_VAULT_MCP_AUTH`
+defaults to `token`, so the static surface is unchanged until a lane
+opts into `both`/`oauth`.
+
+## MCP auth (v1.4.0+)
+
+- `MODAL_VAULT_MCP_AUTH` = `token` (default) | `oauth` | `both`;
+  `MODAL_VAULT_MCP_AUTH_ISSUER` = the app origin (issuer). OAuth lets
+  URL-only clients (Claude, Cursor, Gemini Spark) connect via DCR +
+  PKCE; the operator approves the in-app `/consent` page once with the
+  static token.
+- OAuth state (client registry + token hashes) lives on the Volume at
+  `/vault/state/mcp-as/`. Rotating the static token does NOT invalidate
+  issued OAuth tokens; `POST /revoke` does.
+
 ## Bootstrap + secrets (the overlay carries them)
 
 - The app self-bootstraps on first boot from the Secret's five
