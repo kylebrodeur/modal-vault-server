@@ -42,7 +42,25 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$CLIENT" ] || { echo "--client required (codex|claude|json|gh)" >&2; exit 2; }
+[ -n "$CLIENT" ] || { echo "--client required (codex|claude|json|gh|oauth)" >&2; exit 2; }
+
+# ---- oauth: URL-only clients that run the OAuth flow themselves ------------
+if [ "$CLIENT" = "oauth" ]; then
+  cat <<GUIDE
+OAuth 2.1 clients (Claude, Cursor, Gemini Spark, MCP Inspector) need only the
+MCP server URL; they discover the authorization server and run the flow.
+
+  url: $URL
+
+Requirements on the server: MODAL_VAULT_MCP_AUTH=both (or oauth) and
+MODAL_VAULT_MCP_AUTH_ISSUER set to the app origin. Approve the browser consent
+page with the vault's MODAL_VAULT_API_TOKEN.
+
+Gemini Spark: gemini.google.com -> Settings -> Connected Apps -> Custom apps ->
+add the url above, then approve the consent step.
+GUIDE
+  exit 0
+fi
 
 # ---- codex: native CLI ------------------------------------------------------
 if [ "$CLIENT" = "codex" ]; then
@@ -115,5 +133,5 @@ GUIDE
   exit 0
 fi
 
-echo "unknown --client: $CLIENT (codex|claude|json|gh)" >&2
+echo "unknown --client: $CLIENT (codex|claude|json|gh|oauth)" >&2
 exit 2

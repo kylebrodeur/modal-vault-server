@@ -50,6 +50,7 @@ _SERVE_MODULE_NAMES = (
     "server.app",
     "server.config",
     "server.mcp_tools",
+    "server.mcp_auth",
     "server.embedding_adapter",
     "server.search_scan",
     "server.shadow_git",

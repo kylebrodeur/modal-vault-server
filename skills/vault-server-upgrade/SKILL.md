@@ -34,8 +34,8 @@ tools/guards/deploy-provenance.sh <your-overlay-dir>
 
 ```bash
 git fetch --tags
-git checkout <tag>          # v1.2.4 = current release of record
-uv run --project server pytest server/tests -q   # 169 must pass
+git checkout <tag>          # v1.4.0 = current release of record (adds MCP OAuth 2.1)
+uv run --project server pytest server/tests -q   # 189 must pass
 ```
 
 Then re-run the lane's `deploy.sh` (scaled-to-zero posture stays:

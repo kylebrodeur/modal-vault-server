@@ -121,8 +121,24 @@ Every knob uses the `MODAL_VAULT_` prefix and is read from env inside the contai
 | `MODAL_VAULT_OB_MFA` | MFA code when the account has MFA (login-time) | unset |
 | `MODAL_VAULT_OB_VAULT` | Sync vault name; set to run `sync-setup` on first boot | unset |
 | `MODAL_VAULT_OB_E2E_PASSWORD` | End-to-end encryption password; only for e2e-encrypted vaults | unset |
+| `MODAL_VAULT_MCP_AUTH` | MCP auth surface: `token` (static bearer only), `oauth` (OAuth 2.1 only), or `both` (static + OAuth on one endpoint) | `token` |
+| `MODAL_VAULT_MCP_AUTH_ISSUER` | This app's public origin for the OAuth issuer; blank falls back to `MODAL_VAULT_APP_URL` | unset |
 
 Volume layout: one Modal Volume (v2) carries everything. `/vault` is the clone; `/state` (login state + watermark) is a symlink into `/vault/state` because Modal forbids mounting one Volume at two roots.
+
+## MCP OAuth 2.1 (optional)
+
+The static bearer remains the default. Set `MODAL_VAULT_MCP_AUTH=both` (or `oauth`) to additionally serve a spec-compliant OAuth 2.1 authorization server, so standard MCP clients that expect OAuth - Claude, Cursor, **Gemini Spark custom apps**, the MCP Inspector - can connect with a URL alone and no shared secret.
+
+- **Discovery:** `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414).
+- **Dynamic Client Registration** (`POST /register`): the client registers its own redirect URIs, so Gemini Spark's per-connector `https://oauth-redirect.googleusercontent.com/r/<id>` callback is accepted without any hardcoded allowlist. The flow is client-agnostic: the server validates the authorize `redirect_uri` against whatever the client registered.
+- **Authorization-code + PKCE (S256)**, with a minimal in-app consent page at `/consent`: the operator pastes the vault's `MODAL_VAULT_API_TOKEN` once to approve. That is the anti-confused-deputy control - a client cannot self-authorize.
+- **Scopes:** `vault.read` (the six read/inspect tools) and `vault.write` (the four write tools), enforced per tool call; the static operator token carries both.
+- **Tokens:** opaque, hashed at rest (only SHA-256 digests are written to the Volume), short-lived (1h) with rotating refresh tokens; `POST /revoke` kills either. `/mcp` rejects any token whose resource indicator is not this server (`validate_token_resource`).
+
+The AS state (client registry, tokens) lives on the vault Volume under `/vault/state/mcp-as/`, so it survives scale-to-zero. The OAuth layer is a reusable seam (`server/mcp_auth.py`, static-token + OAuth in one verifier) and a candidate for a shared module if a second family MCP server needs it.
+
+To connect Gemini Spark: `gemini.google.com` → Settings → Connected Apps → Custom apps → add `https://<workspace>--modal-vault-server-serve.modal.run/mcp`, then approve the consent page with your operator token.
 
 ## Slice 2: the write door (shipped in v1.1.0)
 

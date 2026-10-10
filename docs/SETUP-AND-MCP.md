@@ -144,6 +144,42 @@ Client-matrix notes:
 - Claude Desktop/other stdlib-only clients: use an MCP streamable-HTTP
   bridge if HTTP+servers aren't supported natively.
 
+### OAuth 2.1 clients (Claude, Cursor, Gemini Spark, Inspector)
+
+Static bearer requires the client to accept a hardcoded header. Most of the
+MCP ecosystem instead expects OAuth 2.1: discover the protected-resource
+metadata, discover the authorization server, register a client, run an
+authorization-code + PKCE flow in a browser, and present the bearer access
+token. To serve those clients, set `MODAL_VAULT_MCP_AUTH=both` (static token
+keeps working) or `oauth` (OAuth only), and set `MODAL_VAULT_MCP_AUTH_ISSUER`
+to the app's origin (e.g.
+`https://<workspace>--modal-vault-server-serve.modal.run`). No other config:
+the authorization server is self-hosted in the app.
+
+What a client sees:
+
+- `GET /.well-known/oauth-protected-resource/mcp` → this resource + the issuer.
+- `GET /.well-known/oauth-authorization-server` → endpoints + scopes + DCR.
+- `POST /register` → Dynamic Client Registration; the client supplies its own
+  redirect URIs, so Gemini Spark's per-connector
+  `https://oauth-redirect.googleusercontent.com/r/<id>` callback is accepted
+  without a server-side allowlist (the flow is client-agnostic).
+- `GET /authorize` → redirects to the in-app consent page. The operator pastes
+  the vault's `MODAL_VAULT_API_TOKEN` once; the page then returns the
+  authorization code to the client's redirect URI.
+- `POST /token` (PKCE S256) → short-lived access token + rotating refresh.
+- `POST /revoke` → kills an access or refresh token. Public clients must send
+  the `client_secret` form field (empty string is fine) - the SDK's revocation
+  handler requires the field present.
+
+Tokens are opaque and stored only as SHA-256 digests on the Volume
+(`/vault/state/mcp-as/`); access tokens live 1h, refresh tokens rotate on use,
+and `/mcp` refuses any token whose resource indicator is not this server.
+Scope is per tool call: a `vault.read`-only grant cannot call a write tool.
+
+**Gemini Spark:** `gemini.google.com` → Settings → Connected Apps → Custom
+apps → Add a custom app → enter the `/mcp` URL → approve the consent page.
+
 ### The MCP tool surface
 
 | Tool | Kind | Purpose |
@@ -270,6 +306,9 @@ boots serve without re-login.
 | clone exists but is empty | first pull hasn't finished | the first pull takes ~100s for big vaults; watch `mtk vault status` |
 | `XDG`-state lost after deploy | the state dir wasn't on the Volume | verify the `/state -> /vault/state` symlink + the Volume mount in `modal app logs` |
 | `modal volume put` writes not visible to a running container (or clobbered) | an already-running container holds its own mount view and commits over CLI puts on shutdown | CLI puts need a container restart to be seen; server-side writes are the durable path |
+| OAuth client can't connect / `register` 404 | `MODAL_VAULT_MCP_AUTH` left at `token` | set `both` (or `oauth`) and redeploy; `GET /.well-known/oauth-authorization-server` should then 200 |
+| OAuth authorize redirects with `invalid_request: unknown resource` | client asked for a `resource` that isn't this server's `/mcp` | use the `/mcp` URL as the resource; the token is bound to it |
+| Consent page always says "did not match" | wrong operator token | paste the CURRENT `MODAL_VAULT_API_TOKEN` (rotations change it) |
 
 ---
 

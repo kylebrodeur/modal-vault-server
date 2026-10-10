@@ -33,6 +33,8 @@ class Config:
     ob_mfa: str = ""  # MFA code when the account has MFA (one-time at login)
     ob_vault: str = ""  # Sync vault name; set to run sync-setup on first boot
     ob_e2e_password: str = ""  # only for e2e-encrypted vaults
+    mcp_auth: str = "token"  # token | oauth | both (static bearer + OAuth 2.1)
+    mcp_auth_issuer: str = ""  # this app's origin; blank => derive from the request
 
     @property
     def has_ob_credentials(self) -> bool:
@@ -58,4 +60,6 @@ class Config:
             ob_mfa=os.environ.get("MODAL_VAULT_OB_MFA", "").strip(),
             ob_vault=os.environ.get("MODAL_VAULT_OB_VAULT", "").strip(),
             ob_e2e_password=os.environ.get("MODAL_VAULT_OB_E2E_PASSWORD", "").strip(),
+            mcp_auth=os.environ.get("MODAL_VAULT_MCP_AUTH", "token").strip() or "token",
+            mcp_auth_issuer=os.environ.get("MODAL_VAULT_MCP_AUTH_ISSUER", "").strip().rstrip("/"),
         )

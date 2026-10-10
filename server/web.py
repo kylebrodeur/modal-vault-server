@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import hmac
 import json
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -22,11 +23,12 @@ from typing import Annotated, Any
 import mcp.types as mcp_types
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.lowlevel import Server
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from server import search_scan
+from server import mcp_auth, search_scan
 from server import sync_mode as sync_mode_module
 from server.config import Config
 from server.mcp_tools import VaultTools, sync_state
@@ -57,8 +59,9 @@ def _reject() -> JSONResponse:
 class BearerGuard:
     """Raw ASGI bearer gate: non-matching Authorization gets a 401, everything else passes.
 
-    Same exact-bearer rule as /admin — both route through `_bearer_ok` (one
-    comparison in the codebase). Non-http scopes (lifespan) pass.
+    Same exact-bearer rule as /admin - both route through `_bearer_ok` (one
+    comparison in the codebase). Non-http scopes (lifespan) pass. Used only when
+    MCP auth is in static `token` mode; OAuth modes use the SDK RS middleware.
     """
 
     def __init__(self, app: ASGIApp, token: str) -> None:
@@ -85,13 +88,37 @@ class BearerGuard:
         await reject(scope, receive, send)
 
 
+def _resolve_origin(cfg: Config) -> tuple[str, str]:
+    """(issuer_url, resource_server_url) for the OAuth surface.
+
+    Prefer the explicit `MODAL_VAULT_MCP_AUTH_ISSUER`; otherwise use the app's
+    own `MODAL_VAULT_APP_URL`. Both are set at deploy; a missing value falls back
+    to localhost so tests and local runs still work.
+    """
+    origin = (cfg.mcp_auth_issuer or os.environ.get("MODAL_VAULT_APP_URL", "")).strip().rstrip("/")
+    if not origin:
+        origin = "http://localhost:8000"
+    return origin, f"{origin}/mcp"
+
+
 def build_mcp_server(cfg: Config, tools: VaultTools) -> Server:
-    """Official mcp SDK low-level server: five tools, every call delegated to VaultTools.call."""
+    """Official mcp SDK low-level server: five(ten) tools, every call delegated to VaultTools.call."""
 
     async def on_list_tools(_context: Any, _params: Any) -> mcp_types.ListToolsResult:
         return mcp_types.ListToolsResult(tools=[mcp_types.Tool.model_validate(tool) for tool in tools.TOOLS])
 
     async def on_call_tool(_context: Any, params: mcp_types.CallToolRequestParams) -> mcp_types.CallToolResult:
+        # OAuth path: a token with scopes governs what it may call. The static-token
+        # path (MODE_TOKEN) has no SDK auth context, so get_access_token() is None and
+        # enforcement is skipped (the operator's own token carries full access).
+        token = get_access_token()
+        if token is not None:
+            needed = mcp_auth.required_scope(params.name)
+            if needed is not None and needed not in token.scopes:
+                reply = {"error": f"{params.name} requires scope '{needed}'; token has {sorted(token.scopes)}"}
+                return mcp_types.CallToolResult(
+                    content=[mcp_types.TextContent(text=json.dumps(reply))], structured_content=reply, is_error=True
+                )
         reply: dict[str, Any] = await tools.call(params.name, dict(params.arguments or {}))
         text = json.dumps(reply)
         return mcp_types.CallToolResult(
@@ -118,9 +145,25 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     writer = WriteService(cfg, sync, git)
     tools.WRITER = writer
     server = build_mcp_server(cfg, tools)
-    mcp_asgi: ASGIApp = server.streamable_http_app(stateless_http=True, json_response=True, host="0.0.0.0")
-    session_manager = server.session_manager
     worker = sync_mode_module.ContinuousWorker(cfg.data_dir)
+
+    # Auth mode: static bearer (default), OAuth 2.1, or both on one /mcp endpoint.
+    mode = cfg.mcp_auth if cfg.mcp_auth in mcp_auth.MODES else mcp_auth.MODE_TOKEN
+    store = mcp_auth.AuthStore(cfg.state_dir / "mcp-as")
+    issuer, resource = _resolve_origin(cfg)
+    provider = mcp_auth.VaultOAuthProvider(store, issuer, resource)
+    verifier = mcp_auth.VaultTokenVerifier(provider, cfg.api_token, mode, resource)
+    oauth_enabled = mode in (mcp_auth.MODE_OAUTH, mcp_auth.MODE_BOTH)
+    rs_settings = mcp_auth.auth_settings(issuer, resource) if oauth_enabled else None
+    mcp_asgi: ASGIApp = server.streamable_http_app(
+        stateless_http=True,
+        json_response=True,
+        host="0.0.0.0",
+        auth=rs_settings,
+        token_verifier=verifier if oauth_enabled else None,
+        auth_server_provider=provider if oauth_enabled else None,
+    )
+    session_manager = server.session_manager
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -254,6 +297,11 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+    # Auth handles for introspection (mode, store, provider); the store owns the
+    # DCR client registry + token records on the Volume.
+    app.state.mcp_auth_mode = mode
+    app.state.mcp_auth_store = store
+    app.state.mcp_auth_provider = provider
     app.get("/health")(health)
     app.post("/admin/sync")(admin_sync)
     app.post("/admin/sync-mode")(admin_sync_mode)
@@ -261,12 +309,22 @@ def build_app(cfg: Config, sync: SyncService) -> FastAPI:
     app.post("/admin/notes")(admin_note)
     app.post("/admin/notes/delete")(admin_delete_note)
     app.post("/admin/allow-delete")(admin_delete_flag)
-    guarded = BearerGuard(mcp_asgi, cfg.api_token)
-    # Two routes for one MCP endpoint: Mount serves sub-paths (Starlette keeps the
-    # child's full path and sets root_path, so the SDK's inner Route("/mcp") matches
-    # "/mcp/mcp"); the bare Route serves "/mcp" exactly (Mount needs the slash).
-    app.router.routes.append(Mount("/mcp", app=guarded))
-    app.router.routes.append(Route("/mcp", guarded, methods=["GET", "POST", "DELETE"]))
+    if oauth_enabled:
+        # The SDK Starlette app carries the AS routes (/.well-known/*, /authorize,
+        # /token, /register, /revoke) AND the RS-protected /mcp, plus its auth
+        # middleware; mount it at root so those absolute paths resolve. Our own
+        # routes (health, admin, consent) are registered first and win. Its
+        # lifespan is not run by the parent; we run the session manager in ours.
+        for route in mcp_auth.consent_routes(cfg, store):
+            app.router.routes.append(route)
+        app.router.routes.append(Mount("/", app=mcp_asgi))
+    else:
+        guarded = BearerGuard(mcp_asgi, cfg.api_token)
+        # Two routes for one MCP endpoint: Mount serves sub-paths (Starlette keeps the
+        # child's full path and sets root_path, so the SDK's inner Route("/mcp") matches
+        # "/mcp/mcp"); the bare Route serves "/mcp" exactly (Mount needs the slash).
+        app.router.routes.append(Mount("/mcp", app=guarded))
+        app.router.routes.append(Route("/mcp", guarded, methods=["GET", "POST", "DELETE"]))
     return app
 
 
