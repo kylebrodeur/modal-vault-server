@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +23,20 @@ _WEIGHT_BODY = 1.0
 _WEIGHT_TITLE = 2.0
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def frontmatter_of(text: str) -> dict[str, Any]:
-    """Leading `---` YAML block as a dict; {} when absent, invalid, or not a mapping.
+    """Leading `---` YAML block as a JSON-safe mapping.
 
     Only a delimiter as the first line makes frontmatter ("body\\n---\\ntitle: T"
     is a thematic break in the body, not metadata). Malformed YAML and
@@ -45,7 +58,7 @@ def frontmatter_of(text: str) -> dict[str, Any]:
         data = yaml.safe_load(block)
     except yaml.YAMLError:
         return {}
-    return data if isinstance(data, dict) else {}
+    return _json_safe(data) if isinstance(data, dict) else {}
 
 
 def _walk_note_paths(vault_dir: Path, rel_base: str) -> list[str]:

@@ -48,6 +48,17 @@ class TestFrontmatterOf:
     def test_crlf_block_parses(self) -> None:
         assert frontmatter_of("---\r\ntitle: T\r\n---\r\nbody\n") == {"title": "T"}
 
+    def test_yaml_dates_are_json_safe_iso_strings(self) -> None:
+        frontmatter = frontmatter_of(
+            "---\ncreated: 2026-10-10\nupdated: 2026-10-10T12:34:56Z\nnested:\n  published: 2026-10-11\n---\nbody\n"
+        )
+
+        assert frontmatter == {
+            "created": "2026-10-10",
+            "updated": "2026-10-10T12:34:56+00:00",
+            "nested": {"published": "2026-10-11"},
+        }
+
 
 class TestCollectNotes:
     """Every .md under the vault, .obsidian/ and .trash/ pruned, {"path","text","frontmatter"} rows."""
