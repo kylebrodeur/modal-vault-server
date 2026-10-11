@@ -186,7 +186,9 @@ apps → Add a custom app → enter the `/mcp` URL → approve the consent page.
 |------|------|---------|
 | `vault.search` | read | Keyword search over the clone. mode `text` ranks live (every token must match; title hits weigh double); mode `graph` seeds a depth-1 walk from the top-3 matches and returns walked edges too |
 | `vault.read` | read | One note's full text + frontmatter; missing notes return `exists: false` (not errors) |
+| `vault.read_batch` | read | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` — never partial note text |
 | `vault.list` | read | Notes (path + frontmatter), filterable by directory prefix and tag |
+| `vault.browse` | read | Directory discovery: direct child notes (metadata, no body) + child directories with `direct_notes`/`recursive_notes` counts; `path` defaults to the vault root, `recursive: true` walks all descendants, entries are path-sorted and paged via `limit` (default 100, max 500) + `cursor` with `next_cursor` |
 | `vault.query_graph` | read | Link-graph neighborhood around a seed within `depth` hops (note-link edges) |
 | `vault.status` | read | Sync watermark, live note count, the semantic-search door (`configured:false` until modal-embedding-server connects) |
 | `vault.create_note` | write | new note (path + full text); refuses existing paths; snapshot-first |
@@ -194,12 +196,48 @@ apps → Add a custom app → enter the `/mcp` URL → approve the consent page.
 | `vault.snapshots` | write | the shadow-git log (the undo ladder; per-path) |
 | `vault.revert` | write | restore one path from a snapshot sha; snapshots the revert itself |
 
-The MCP registry advertises these nine tools. The four write tools are
-posture-aware: in `pull-only` a write is staged locally and the reply
-says so; in `sync-on-write`/`continuous` it syncs per the posture.
+The MCP registry advertises these eleven tools. Every read tool carries
+the `vault.read` OAuth scope; the four write tools are posture-aware:
+in `pull-only` a write is staged locally and the reply says so; in
+`sync-on-write`/`continuous` it syncs per the posture.
 Every reply is a plain JSON dict; errors degrade to `{"error": ...}`
 (never raise). Search is a live scan (no index): clone = source of
 truth; the link graph is a live walk.
+
+Normal read access (search, read, read_batch, list, browse) is the
+whole reachable clone minus a fixed protected set: `.obsidian` and
+`.trash` are pruned at every depth, `..` traversal and symlink escapes
+never resolve, and only Markdown (`.md`) notes are served — non-`.md`
+attachments and local `.review.yaml` review sidecars never appear,
+and every read path must stay inside the vault.
+
+### Navigation in practice (v1.5.0)
+
+Tool paths are arbitrary vault-relative paths: the folder names below
+are illustrative examples of one vault's layout, never configuration,
+and any other vault layout works the same way.
+
+```jsonc
+// 1. Root direct browse (no path = vault root): direct child notes with
+//    metadata and child directories with note counts, path-sorted.
+{ "tool": "vault.browse" }
+
+// 2. Arbitrary nested recursive browse with paging: any vault-relative
+//    directory; entries are path-sorted deterministically and pages slice
+//    the same sequence (pass next_cursor back as cursor).
+{
+  "tool": "vault.browse",
+  "arguments": { "path": "10-projects", "recursive": true, "limit": 50, "cursor": 50 }
+}
+
+// 3. Ordered batch read of whole notes (max 20 per call):
+//    caller order preserved; missing/blocked paths land in `errors`
+//    per-path — never partial note text.
+{
+  "tool": "vault.read_batch",
+  "arguments": { "paths": ["10-projects/Roadmap.md", "20-areas/Health.md", "missing.md"] }
+}
+```
 
 Delete is NOT an advertised MCP tool. It rides the bearer-gated
 `POST /admin/notes/delete` route, which works ONLY while the windowed
@@ -368,6 +406,8 @@ agent team) integrate WITHOUT touching upstream code:
 
 Shipped since v1.1.0: runtime-mutable sync postures (`/admin/sync-mode`),
 the shadow-git snapshot layer, the MCP write tools +
-`POST /admin/notes`, and the windowed delete door. Open work: hybrid
+`POST /admin/notes`, and the windowed delete door. v1.5.0 adds read-only
+navigation (`vault.browse` + `vault.read_batch`, both `vault.read`-scoped).
+Open work: hybrid
 semantic ranking (the `vault.status` door is live when `MODAL_VAULT_EMBEDDING_URL`
 is set; ranking over it comes next) and the ledger/memory-plane door.

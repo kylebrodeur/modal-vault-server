@@ -17,15 +17,19 @@ Alongside the MCP mount the app exposes `GET /health` (vault + sync triage) and 
 
 ## The MCP tools
 
-Read tools (always available):
+Read tools (all require the `vault.read` OAuth scope when OAuth is on; always available under the static bearer):
 
 | Tool | Purpose |
 |------|---------|
 | `vault.search` | Keyword search over the clone. mode `text` ranks notes live (every query token must match; title hits weigh double). mode `graph` seeds a depth-1 link-graph walk from the top-3 text matches and also returns the walked edges. |
 | `vault.read` | One note's full text and frontmatter; missing notes return `exists: false`, not an error. |
+| `vault.read_batch` | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` — never partial note text (an overflowing note is skipped whole; use `vault.read`). |
 | `vault.list` | Notes (path + frontmatter), optionally filtered by directory prefix and frontmatter tag. |
+| `vault.browse` | Directory discovery: lists direct child notes (metadata rows, no body text) and child directories (with `direct_notes`/`recursive_notes` counts). `path` defaults to the vault root; `recursive: true` walks all descendants. Entries are path-sorted deterministically and paged via `limit` (default 100, max 500) + `cursor`, with `next_cursor: null` exactly when the listing is exhausted. |
 | `vault.query_graph` | Link-graph neighborhood around one seed note within `depth` hops (kind `note-link` only). |
 | `vault.status` | Sync watermark, live note count, and the semantic-search door. |
+
+Every read tool serves the clone through the same safe path reader: `.obsidian` and `.trash` are pruned at every depth, `..` traversal and symlink escapes never resolve, and only `.md` notes exist — binary attachments and local review sidecars (`*.review.yaml`) never appear in a listing. Normal browsing is therefore the whole reachable vault minus those.
 
 Write tools (posture-gated; snapshot-first, and in `pull-only` a write is staged locally rather than pushed):
 
@@ -36,7 +40,34 @@ Write tools (posture-gated; snapshot-first, and in `pull-only` a write is staged
 | `vault.snapshots` | The shadow-git snapshot log (whole vault or one path): the undo ladder. |
 | `vault.revert` | Restore one path's content from a snapshot ref (sha), snapshotting the revert itself. |
 
-Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade to `{"error": ...}` instead of raising, and `vault.status` reports the semantic door as a constant (`"configured": false`) until an embedding connection actually exists. There is no semantic or hybrid mode here, and none stored or computed. Note deletion is not an MCP tool: it rides the bearer-gated `POST /admin/notes/delete` route behind the self-expiring arm window (every delete requires a successful pre-delete snapshot).
+Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade to `{"error": ...}` instead of raising, `vault.status` reports the semantic door as a constant (`"configured": false`) until an embedding connection actually exists, and `vault.browse` answers an invalid path with an empty entry list rather than a widened one. There is no semantic or hybrid mode here, and none stored or computed. Note deletion is not an MCP tool: it rides the bearer-gated `POST /admin/notes/delete` route behind the self-expiring arm window (every delete requires a successful pre-delete snapshot).
+
+### Browsing and batch reads (v1.5.0)
+
+Tool paths are arbitrary vault-relative paths — the folder names below are illustrative examples of one vault's layout, never configuration:
+
+```jsonc
+// Root direct browse: no path = vault root; returns direct child notes
+// (frontmatter + description metadata, no body text) and directories
+// with note counts, path-sorted.
+{ "tool": "vault.browse" }
+
+// Arbitrary nested recursive browse with cursor paging: any vault-relative
+// directory works; recursive:true includes all descendant notes and
+// directories, and pages slice the same deterministic path-sorted sequence.
+{
+  "tool": "vault.browse",
+  "arguments": { "path": "10-projects", "recursive": true, "limit": 50 }
+}
+
+// Ordered batch read: notes come back whole, in caller order, under the
+// character budget; a missing path is reported in errors, not dropped
+// silently or partially returned.
+{
+  "tool": "vault.read_batch",
+  "arguments": { "paths": ["10-projects/Roadmap.md", "20-areas/Health.md", "missing.md"] }
+}
+```
 
 ## Quick start
 
@@ -133,7 +164,7 @@ The static bearer remains the default. Set `MODAL_VAULT_MCP_AUTH=both` (or `oaut
 - **Discovery:** `/.well-known/oauth-protected-resource/mcp` (RFC 9728) and `/.well-known/oauth-authorization-server` (RFC 8414).
 - **Dynamic Client Registration** (`POST /register`): the client registers its own redirect URIs, so Gemini Spark's per-connector `https://oauth-redirect.googleusercontent.com/r/<id>` callback is accepted without any hardcoded allowlist. The flow is client-agnostic: the server validates the authorize `redirect_uri` against whatever the client registered.
 - **Authorization-code + PKCE (S256)**, with a minimal in-app consent page at `/consent`: the operator pastes the vault's `MODAL_VAULT_API_TOKEN` once to approve. That is the anti-confused-deputy control - a client cannot self-authorize.
-- **Scopes:** `vault.read` (the six read/inspect tools) and `vault.write` (the four write tools), enforced per tool call; the static operator token carries both.
+- **Scopes:** `vault.read` (the seven read tools, including the v1.5.0 `vault.browse` and `vault.read_batch`) and `vault.write` (the four write tools), enforced per tool call; the static operator token carries both.
 - **Tokens:** opaque, hashed at rest (only SHA-256 digests are written to the Volume), short-lived (1h) with rotating refresh tokens; `POST /revoke` kills either. `/mcp` rejects any token whose resource indicator is not this server (`validate_token_resource`).
 
 The AS state (client registry, tokens) lives on the vault Volume under `/vault/state/mcp-as/`, so it survives scale-to-zero. The OAuth layer is a reusable seam (`server/mcp_auth.py`, static-token + OAuth in one verifier) and a candidate for a shared module if a second family MCP server needs it.
@@ -157,6 +188,8 @@ To connect Gemini Spark: `gemini.google.com` → Settings → Connected Apps →
   require a successful pre-delete snapshot (no snapshot, no delete).
 - **Admin REST**: `POST /admin/notes` (create-or-update),
   `/admin/notes/delete`, `/admin/allow-delete` — same core as MCP.
+- **v1.5.0 navigation reads**: `vault.browse` and `vault.read_batch`
+  take the read surface from five tools to seven (both `vault.read`-scoped).
 
 Still open: semantic search (the `vault.status` door goes live when
 `MODAL_VAULT_EMBEDDING_URL` lands in the Secret; hybrid ranking comes after),
