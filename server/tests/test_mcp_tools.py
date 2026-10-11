@@ -37,16 +37,18 @@ def _tools(vault_dir: Path) -> VaultTools:
 
 
 class TestToolsRegistry:
-    """TOOLS carries all five tools with name/description/inputSchema."""
+    """TOOLS carries the seven read tools plus the optional write door."""
 
-    def test_all_five_tools_with_required_contract(self) -> None:
+    def test_all_read_tools_and_write_door_with_required_contract(self) -> None:
         names = {tool["name"] for tool in VaultTools.TOOLS}
-        # Five reads + the write door (create/update/snapshots/revert; delete is
-        # flag-gated and NOT a steady-state listed tool).
+        # Seven reads + the write door (create/update/snapshots/revert; delete
+        # is flag-gated and NOT a steady-state listed tool).
         assert names == {
             "vault.search",
             "vault.read",
+            "vault.read_batch",
             "vault.list",
+            "vault.browse",
             "vault.query_graph",
             "vault.status",
             "vault.create_note",
@@ -64,6 +66,8 @@ class TestToolsRegistry:
         assert schemas["vault.search"]["required"] == ["query"]
         assert schemas["vault.search"]["properties"]["mode"]["enum"] == ["text", "graph"]
         assert schemas["vault.read"]["required"] == ["path"]
+        assert schemas["vault.read_batch"]["required"] == ["paths"]
+        assert set(schemas["vault.browse"]["properties"]) == {"path", "recursive", "limit", "cursor"}
         assert schemas["vault.query_graph"]["required"] == ["seed"]
         assert "required" not in schemas["vault.list"]
         assert schemas["vault.status"]["properties"] == {}
@@ -140,6 +144,25 @@ class TestReadTool:
         assert out["text"] == ""
 
 
+class TestBatchReadTool:
+    """vault.read_batch: ordered complete-note reads with structured failures."""
+
+    async def test_preserves_order_and_reports_missing_paths(self, vault: Path) -> None:
+        out = await _tools(vault).call("vault.read_batch", {"paths": ["Ideas.md", "missing.md", "Inbox.md"]})
+        assert [note["path"] for note in out["notes"]] == ["Ideas.md", "Inbox.md"]
+        assert out["errors"] == [{"path": "missing.md", "error": "not found"}]
+
+    async def test_refuses_more_than_twenty_paths(self, vault: Path) -> None:
+        out = await _tools(vault).call("vault.read_batch", {"paths": [f"n-{index}.md" for index in range(21)]})
+        assert out == {"error": "paths supports at most 20 notes"}
+
+    async def test_never_returns_partial_text_when_character_budget_is_exceeded(self, vault: Path) -> None:
+        (vault / "large.md").write_text("x" * 120_001, encoding="utf-8")
+        out = await _tools(vault).call("vault.read_batch", {"paths": ["Ideas.md", "large.md"]})
+        assert [note["path"] for note in out["notes"]] == ["Ideas.md"]
+        assert out["errors"] == [{"path": "large.md", "error": "batch character limit reached; use vault.read"}]
+
+
 class TestListTool:
     """vault.list: path + frontmatter rows, optional prefix and frontmatter-tags filter."""
 
@@ -174,6 +197,45 @@ class TestListTool:
             await _tools(vault).call("vault.search", {"query": "alpha", "prefix": "/etc"}),
         ):
             assert out["count"] == 0 if "count" in out else out["results"] == []
+
+
+class TestBrowseTool:
+    """vault.browse: safe direct or recursive directory discovery with stable paging."""
+
+    async def test_direct_browse_lists_only_direct_notes_and_directories(self, vault: Path) -> None:
+        # lowercase "archives" cannot case-insensitively collide with the
+        # fixture's "Projects"/"Archive" dirs on macOS filesystems.
+        (vault / "archives" / "nested").mkdir(parents=True)
+        (vault / "archives" / "a.md").write_text("# A\n", encoding="utf-8")
+        (vault / "archives" / "nested" / "b.md").write_text("# B\n", encoding="utf-8")
+
+        out = await _tools(vault).call("vault.browse", {"path": "archives"})
+
+        assert out["path"] == "archives"
+        assert out["recursive"] is False
+        assert [entry["path"] for entry in out["entries"]] == ["archives/a.md", "archives/nested"]
+        assert out["entries"][0]["kind"] == "note"
+        assert out["entries"][1] == {
+            "kind": "directory",
+            "path": "archives/nested",
+            "name": "nested",
+            "direct_notes": 1,
+            "recursive_notes": 1,
+        }
+        assert out["next_cursor"] is None
+
+    async def test_recursive_browse_paginates_deterministically(self, vault: Path) -> None:
+        first = await _tools(vault).call("vault.browse", {"path": "", "recursive": True, "limit": 1})
+        second = await _tools(vault).call("vault.browse", {"path": "", "recursive": True, "limit": 1, "cursor": 1})
+
+        assert len(first["entries"]) == 1
+        assert first["next_cursor"] == 1
+        assert len(second["entries"]) == 1
+        assert second["entries"][0]["path"] != first["entries"][0]["path"]
+
+    async def test_invalid_browse_path_returns_no_widened_results(self, vault: Path) -> None:
+        out = await _tools(vault).call("vault.browse", {"path": "../escape"})
+        assert out == {"path": "../escape", "recursive": False, "entries": [], "next_cursor": None}
 
 
 class TestQueryGraphTool:

@@ -76,7 +76,16 @@ SCOPE_WRITE = "vault.write"
 ALL_SCOPES = (SCOPE_READ, SCOPE_WRITE)
 
 READ_TOOLS = frozenset(
-    {"vault.search", "vault.read", "vault.list", "vault.query_graph", "vault.status", "vault.snapshots"}
+    {
+        "vault.search",
+        "vault.read",
+        "vault.read_batch",
+        "vault.list",
+        "vault.browse",
+        "vault.query_graph",
+        "vault.status",
+        "vault.snapshots",
+    }
 )
 WRITE_TOOLS = frozenset({"vault.create_note", "vault.update_note", "vault.delete_note", "vault.revert"})
 

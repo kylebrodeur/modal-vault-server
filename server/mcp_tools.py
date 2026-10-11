@@ -1,4 +1,4 @@
-"""Vault tool surface for MCP: the five read-only tools and their wire contract.
+"""Vault tool surface for MCP: the seven read-only tools and their wire contract.
 
 Contract lives in the amended plan and the Task 6 brief; every reply is a JSON
 dict (errors degrade to ``{"error": ...}``, never raise), graph work happens
@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 from server.config import Config
 from server.embedding_adapter import semantic_section
 from server.linker import build_edge_set, posixpath_norm, resolve_link
+from server.search_scan import safe_note_path
 from server.types import LAST_SYNC_FILE, EdgeRow
 
 _DEFAULT_K = 8
@@ -22,6 +23,10 @@ _UNBOUNDED_K = 1_000_000  # graph seeds need the full ranking, k slices it later
 _GRAPH_SEED_COUNT = 3
 _GRAPH_DEPTH = 1
 _KIND = "note-link"
+_BROWSE_LIMIT_DEFAULT = 100
+_BROWSE_LIMIT_MAX = 500
+_BATCH_MAX_PATHS = 20
+_BATCH_CHAR_LIMIT = 120_000
 _SEMANTIC_DOOR: dict[str, Any] = {"configured": False, "note": "connect modal-embedding-server later"}
 
 
@@ -99,6 +104,26 @@ class VaultTools:
             },
         },
         {
+            "name": "vault.read_batch",
+            "description": (
+                "Read up to 20 complete notes in caller order within a 120,000-character "
+                "budget. Missing, invalid, or unreadable paths are reported per-path in "
+                "`errors` (never truncated text); vault.read is the unbounded single read."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": 20,
+                        "description": "Vault-relative note paths; caller order is preserved",
+                    },
+                },
+                "required": ["paths"],
+            },
+        },
+        {
             "name": "vault.list",
             "description": (
                 "List notes (path + frontmatter), optionally filtered by directory prefix and frontmatter tag."
@@ -108,6 +133,30 @@ class VaultTools:
                 "properties": {
                     "prefix": {"type": "string", "description": "Restrict to a vault-relative directory"},
                     "tag": {"type": "string", "description": "Only notes whose frontmatter tags contain this"},
+                },
+            },
+        },
+        {
+            "name": "vault.browse",
+            "description": (
+                "List one vault-relative directory (empty path = vault root): child notes "
+                "with metadata and child directories with note counts. recursive:true walks "
+                "all descendants; entries are sorted by path and paged by limit/cursor."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Vault-relative directory path (empty = vault root)",
+                    },
+                    "recursive": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Include all descendant notes and directories",
+                    },
+                    "limit": {"type": "integer", "default": 100, "minimum": 1, "maximum": 500},
+                    "cursor": {"type": "integer", "default": 0, "minimum": 0},
                 },
             },
         },
@@ -220,8 +269,12 @@ class VaultTools:
             return await self._search_tool(arguments)
         if name == "vault.read":
             return await self._read_tool(arguments)
+        if name == "vault.read_batch":
+            return await self._read_batch_tool(arguments)
         if name == "vault.list":
             return await self._list_tool(arguments)
+        if name == "vault.browse":
+            return await self._browse_tool(arguments)
         if name == "vault.query_graph":
             return await self._query_graph_tool(arguments)
         if name == "vault.status":
@@ -340,6 +393,46 @@ class VaultTools:
             return row
         return {"path": safe_rel, "text": text, "frontmatter": self._search.frontmatter_of(text), "exists": True}
 
+    # -- vault.read_batch -----------------------------------------------------
+
+    async def _read_batch_tool(self, arguments: dict) -> dict:
+        """Ordered complete-note reads with per-path structured failures.
+
+        Same safe direct-note reader as vault.read (safe_note_path: traversal,
+        symlink escapes, control dirs, and non-Markdown all degrade to one
+        structured error, matching read's blunt exists:false). The character
+        budget is checked against every COMPLETE note before it is accepted;
+        an overflowing note is never partially returned.
+        """
+        paths = arguments.get("paths")
+        if not isinstance(paths, list):
+            return {"error": "paths must be a list of note paths"}
+        if len(paths) > _BATCH_MAX_PATHS:
+            return {"error": "paths supports at most 20 notes"}
+        notes: list[dict] = []
+        errors: list[dict[str, str]] = []
+        spent = 0
+        for raw_path in paths:
+            path_str = raw_path if isinstance(raw_path, str) else str(raw_path)
+            candidate = safe_note_path(self._cfg.data_dir, path_str) if path_str else None
+            if candidate is None:
+                errors.append({"path": path_str, "error": "not found"})
+                continue
+            try:
+                text = candidate.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                errors.append({"path": path_str, "error": "not found"})
+                continue
+            if spent + len(text) > _BATCH_CHAR_LIMIT:
+                errors.append({"path": path_str, "error": "batch character limit reached; use vault.read"})
+                continue
+            spent += len(text)
+            safe_rel = posixpath_norm(path_str)
+            notes.append(
+                {"path": safe_rel, "text": text, "frontmatter": self._search.frontmatter_of(text), "exists": True}
+            )
+        return {"notes": notes, "errors": errors}
+
     # -- vault.list -----------------------------------------------------------
 
     async def _list_tool(self, arguments: dict) -> dict:
@@ -353,6 +446,45 @@ class VaultTools:
             if tag_want is None or tag_want in _tags_of(note_row["frontmatter"])
         ]
         return {"notes": rows, "count": len(rows)}
+
+    # -- vault.browse ---------------------------------------------------------
+
+    async def _browse_tool(self, arguments: dict) -> dict:
+        """Safe direct/recursive directory discovery with stable cursor paging.
+
+        Input coercion: a non-boolean `recursive` degrades to false, a
+        non-positive/invalid `limit` to the default (then clamped to the max),
+        and a negative/invalid `cursor` to 0. The deterministic entry sequence
+        is built first, then sliced; `next_cursor` is None exactly when the
+        requested sequence is exhausted. An invalid path echoes back with an
+        empty entry list — never a widened listing.
+        """
+        raw_path = str(arguments.get("path", ""))
+        recursive_raw = arguments.get("recursive", False)
+        recursive = recursive_raw if isinstance(recursive_raw, bool) else False
+        try:
+            limit = int(arguments.get("limit", _BROWSE_LIMIT_DEFAULT))
+        except (TypeError, ValueError):
+            limit = _BROWSE_LIMIT_DEFAULT
+        if limit < 1:
+            limit = _BROWSE_LIMIT_DEFAULT
+        limit = min(limit, _BROWSE_LIMIT_MAX)
+        try:
+            cursor = int(arguments.get("cursor", 0))
+        except (TypeError, ValueError):
+            cursor = 0
+        cursor = max(cursor, 0)
+
+        entries = self._search.browse_tree(self._cfg.data_dir, raw_path, recursive)
+        total = len(entries)
+        page = entries[cursor : cursor + limit]
+        end = cursor + limit
+        return {
+            "path": raw_path,
+            "recursive": recursive,
+            "entries": page,
+            "next_cursor": end if end < total else None,
+        }
 
     # -- vault.query_graph ----------------------------------------------------
 

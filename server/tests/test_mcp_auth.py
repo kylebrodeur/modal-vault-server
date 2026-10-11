@@ -272,6 +272,19 @@ class TestScopeEnforcement:
             allowed = _call(client, token["access_token"], "vault.list", {})
             assert allowed["isError"] is False
 
+    def test_read_only_token_can_call_batch_and_browse(self, tmp_path) -> None:
+        """vault.read_batch and vault.browse are read tools: a vault.read OAuth
+        token reaches them through the normal /mcp tools/call flow."""
+        with _client(tmp_path, "both") as client:
+            _cid, token = _full_token(client, "vault.read")
+            batch = _call(client, token["access_token"], "vault.read_batch", {"paths": ["Note.md"]})
+            assert batch["isError"] is False
+            assert batch["structuredContent"]["notes"][0]["path"] == "Note.md"
+            browse = _call(client, token["access_token"], "vault.browse", {"path": ""})
+            assert browse["isError"] is False
+            note_entries = [entry for entry in browse["structuredContent"]["entries"] if entry["kind"] == "note"]
+            assert [entry["path"] for entry in note_entries] == ["Note.md"]
+
     def test_static_token_carries_all_scopes(self, tmp_path) -> None:
         with _client(tmp_path, "both") as client:
             result = _call(client, "TOK", "vault.create_note", {"path": "x.md", "text": "y"})

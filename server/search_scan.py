@@ -256,6 +256,101 @@ def _collect_from_paths(vault_dir: Path, rel_paths: list[str]) -> list[dict]:
     return sorted(notes, key=lambda note: note["path"])
 
 
+def _direct_notes_of(notes_all: list[str], dir_rel: str) -> list[str]:
+    """Notes whose immediate parent is `dir_rel` ("" for the vault root)."""
+    return [note for note in notes_all if posixpath.dirname(note) == dir_rel]
+
+
+def _note_counts(notes_all: list[str], dir_rel: str) -> tuple[int, int]:
+    """(direct, recursive) safe-note counts for one directory entry."""
+    prefix = f"{dir_rel}/"
+    direct = recursive = 0
+    for note in notes_all:
+        if not note.startswith(prefix):
+            continue
+        recursive += 1
+        if posixpath.dirname(note) == dir_rel:
+            direct += 1
+    return direct, recursive
+
+
+def _directory_entries(
+    vault_dir: Path,
+    base: str,
+    start: Path,
+    recursive: bool,
+    notes_all: list[str],
+) -> list[dict]:
+    """Directory entries under `start`: root's children always, deeper levels only when recursive.
+
+    Children come from each parent's `dirnames` (pruned control dirs, sorted) so
+    even non-descended symlinked children are seen; each candidate is then
+    containment-checked so symlink escapes never become entries.
+    """
+    entries: list[dict] = []
+    for dirpath, dirnames, _filenames in os.walk(start, onerror=lambda _error: None, followlinks=False):
+        dirnames[:] = sorted(d for d in dirnames if d.casefold() not in _PRUNED_DIRS)
+        parent_rel = posixpath.join(base, *Path(dirpath).relative_to(start).parts)
+        for name in dirnames:
+            rel = posixpath.join(parent_rel, name)
+            if safe_directory_path(vault_dir, rel) is None:
+                continue
+            direct_notes, recursive_notes = _note_counts(notes_all, rel)
+            entries.append(
+                {
+                    "kind": "directory",
+                    "path": rel,
+                    "name": name,
+                    "direct_notes": direct_notes,
+                    "recursive_notes": recursive_notes,
+                }
+            )
+        if not recursive:
+            dirnames.clear()  # direct mode lists only the browse root's children
+    return entries
+
+
+def browse_tree(vault_dir: Path, rel_base: str, recursive: bool) -> list[dict]:
+    """Stable mixed directory/note entries under one vault-relative directory.
+
+    The filesystem/frontmatter boundary behind vault.browse: directories carry
+    `direct_notes`/`recursive_notes` counts from the same safe walker as
+    collection; notes carry the full metadata row (frontmatter, status,
+    description, bytes, modified_at) without the body text. Notes unreadable
+    between walk and read degrade to absence. An invalid `rel_base` (missing,
+    file, protected, escaping) yields [] — never a widened listing.
+    """
+    if not vault_dir.is_dir():
+        return []
+    start = safe_directory_path(vault_dir, rel_base)
+    if start is None:
+        return []
+    notes_all = _walk_note_paths(vault_dir, rel_base)
+    base = posixpath_norm(rel_base)
+    listed = notes_all if recursive else _direct_notes_of(notes_all, base)
+    rows_by_path = {row["path"]: row for row in _collect_from_paths(vault_dir, listed)}
+    note_entries: list[dict] = []
+    for rel in listed:
+        row = rows_by_path.get(rel)
+        if row is None:
+            continue
+        note_entries.append(
+            {
+                "kind": "note",
+                "path": rel,
+                "name": posixpath.basename(rel),
+                "frontmatter": row["frontmatter"],
+                "frontmatter_status": row["frontmatter_status"],
+                "description": row["description"],
+                "description_source": row["description_source"],
+                "bytes": row["bytes"],
+                "modified_at": row["modified_at"],
+            }
+        )
+    entries = [*note_entries, *_directory_entries(vault_dir, base, start, recursive, notes_all)]
+    return sorted(entries, key=lambda entry: entry["path"])
+
+
 def scan_vault(vault_dir: Path, query: str, k: int = 8, prefix: str = "") -> list[dict]:
     """Ranked keyword scan; every token must match; title hits weigh 2x body hits."""
     tokens = query.lower().split()
