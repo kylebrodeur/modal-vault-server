@@ -2,7 +2,14 @@
 
 from pathlib import Path
 
-from server.search_scan import collect_notes, frontmatter_of, scan_vault
+from server.search_scan import (
+    collect_notes,
+    frontmatter_details,
+    frontmatter_of,
+    note_description,
+    safe_note_path,
+    scan_vault,
+)
 
 
 def _write_vault(vault: Path, notes: dict[str, str]) -> None:
@@ -60,6 +67,60 @@ class TestFrontmatterOf:
         }
 
 
+class TestNavigationMetadata:
+    """Navigation metadata remains useful when Obsidian notes are imperfect."""
+
+    def test_details_distinguish_missing_invalid_and_non_mapping_frontmatter(self) -> None:
+        assert frontmatter_details("# Body\n") == {"frontmatter": {}, "frontmatter_status": "missing"}
+        assert frontmatter_details("---\ntitle: [\n---\n# Body\n") == {
+            "frontmatter": {},
+            "frontmatter_status": "invalid",
+        }
+        assert frontmatter_details("---\n- item\n---\n# Body\n") == {
+            "frontmatter": {},
+            "frontmatter_status": "non_mapping",
+        }
+        assert frontmatter_details("---\ntitle: never closes\n") == {
+            "frontmatter": {},
+            "frontmatter_status": "invalid",
+        }
+
+    def test_description_prefers_metadata_then_heading_body_and_filename(self) -> None:
+        assert note_description(
+            "---\nsummary: Compact summary\n---\n# Ignored title\n", {"summary": "Compact summary"}, "valid", "draft.md"
+        ) == {"description": "Compact summary", "description_source": "frontmatter.summary"}
+        assert note_description("# Heading title\n", {}, "missing", "draft.md") == {
+            "description": "Heading title",
+            "description_source": "heading",
+        }
+        assert note_description(
+            "> [!NOTE]\n> Skip this callout.\n\nUseful prose paragraph.\n", {}, "missing", "draft.md"
+        ) == {
+            "description": "Useful prose paragraph.",
+            "description_source": "body_excerpt",
+        }
+        assert note_description("", {}, "missing", "active-draft.md") == {
+            "description": "active draft",
+            "description_source": "filename",
+        }
+
+    def test_safe_note_path_rejects_traversal_control_dirs_and_symlink_escape(self, tmp_path: Path) -> None:
+        vault = tmp_path / "vault"
+        vault.mkdir()
+        (vault / ".obsidian").mkdir()
+        (vault / ".trash").mkdir()
+        (vault / "inside.md").write_text("inside", encoding="utf-8")
+        outside = tmp_path / "outside.md"
+        outside.write_text("outside", encoding="utf-8")
+        (vault / "escape.md").symlink_to(outside)
+
+        assert safe_note_path(vault, "inside.md") == vault / "inside.md"
+        assert safe_note_path(vault, "../outside.md") is None
+        assert safe_note_path(vault, ".obsidian/plugin.md") is None
+        assert safe_note_path(vault, ".trash/deleted.md") is None
+        assert safe_note_path(vault, "escape.md") is None
+
+
 class TestCollectNotes:
     """Every .md under the vault, .obsidian/ and .trash/ pruned, {"path","text","frontmatter"} rows."""
 
@@ -79,10 +140,24 @@ class TestCollectNotes:
     def test_note_shape_and_frontmatter(self, tmp_path: Path) -> None:
         _write_vault(tmp_path, {"a.md": "---\ntitle: A\n---\nbody line\n"})
         (note,) = collect_notes(tmp_path)
-        assert set(note) == {"path", "text", "frontmatter"}
+        assert set(note) == {
+            "path",
+            "text",
+            "frontmatter",
+            "frontmatter_status",
+            "description",
+            "description_source",
+            "bytes",
+            "modified_at",
+        }
         assert note["path"] == "a.md"
         assert note["text"] == "---\ntitle: A\n---\nbody line\n"
         assert note["frontmatter"] == {"title": "A"}
+        assert note["frontmatter_status"] == "valid"
+        assert note["description"] == "A"
+        assert note["description_source"] == "frontmatter.title"
+        assert note["bytes"] == len(note["text"].encode("utf-8"))
+        assert note["modified_at"].endswith("Z")
 
     def test_prefix_restricts_to_subtree(self, tmp_path: Path) -> None:
         _write_vault(tmp_path, {"nested/deep.md": "deep\n", "root.md": "root\n"})
