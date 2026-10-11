@@ -1,4 +1,4 @@
-# AGENTS.md — modal-vault-server
+# AGENTS.md - modal-vault-server
 
 Agent instructions for THIS repo (v1.2.4 on `main`). The family-wide
 rules live in the system workspace's AGENTS.md

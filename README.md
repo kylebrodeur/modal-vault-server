@@ -23,13 +23,13 @@ Read tools (all require the `vault.read` OAuth scope when OAuth is on; always av
 |------|---------|
 | `vault.search` | Keyword search over the clone. mode `text` ranks notes live (every query token must match; title hits weigh double). mode `graph` seeds a depth-1 link-graph walk from the top-3 text matches and also returns the walked edges. |
 | `vault.read` | One note's full text and frontmatter; missing notes return `exists: false`, not an error. |
-| `vault.read_batch` | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` — never partial note text (an overflowing note is skipped whole; use `vault.read`). |
+| `vault.read_batch` | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` - never partial note text (an overflowing note is skipped whole; use `vault.read`). |
 | `vault.list` | Notes (path + frontmatter), optionally filtered by directory prefix and frontmatter tag. |
 | `vault.browse` | Directory discovery: lists direct child notes (metadata rows, no body text) and child directories (with `direct_notes`/`recursive_notes` counts). `path` defaults to the vault root; `recursive: true` walks all descendants. Entries are path-sorted deterministically and paged via `limit` (default 100, max 500) + `cursor`, with `next_cursor: null` exactly when the listing is exhausted. |
 | `vault.query_graph` | Link-graph neighborhood around one seed note within `depth` hops (kind `note-link` only). |
 | `vault.status` | Sync watermark, live note count, and the semantic-search door. |
 
-Every read tool serves the clone through the same safe path reader: `.obsidian` and `.trash` are pruned at every depth, `..` traversal and symlink escapes never resolve, and only `.md` notes exist — binary attachments and local review sidecars (`*.review.yaml`) never appear in a listing. Normal browsing is therefore the whole reachable vault minus those.
+Every read tool serves the clone through the same safe path reader: `.obsidian` and `.trash` are pruned at every depth, `..` traversal and symlink escapes never resolve, and only `.md` notes exist - binary attachments and local review sidecars (`*.review.yaml`) never appear in a listing. Normal browsing is therefore the whole reachable vault minus those.
 
 Write tools (posture-gated; snapshot-first, and in `pull-only` a write is staged locally rather than pushed):
 
@@ -44,7 +44,7 @@ Honesty rules the tool surface: every reply is a plain JSON dict, errors degrade
 
 ### Browsing and batch reads (v1.5.0)
 
-Tool paths are arbitrary vault-relative paths — the folder names below are illustrative examples of one vault's layout, never configuration:
+Tool paths are arbitrary vault-relative paths - the folder names below are illustrative examples of one vault's layout, never configuration:
 
 ```jsonc
 // Root direct browse: no path = vault root; returns direct child notes
@@ -174,7 +174,7 @@ To connect Gemini Spark: `gemini.google.com` → Settings → Connected Apps →
 ## Slice 2: the write door (shipped in v1.1.0)
 
 - **Runtime sync postures** (`POST /admin/sync-mode`): `pull-only |
-  sync-on-write | continuous`, persisted in the state dir — flips at
+  sync-on-write | continuous`, persisted in the state dir - flips at
   runtime, no env var, no reboot; survives restarts; `/health` exposes
   the posture.
 - **MCP write tools**: `vault.create_note` & `vault.update_note`
@@ -187,7 +187,7 @@ To connect Gemini Spark: `gemini.google.com` → Settings → Connected Apps →
   `POST /admin/allow-delete`) can arm it, and armed deletes still
   require a successful pre-delete snapshot (no snapshot, no delete).
 - **Admin REST**: `POST /admin/notes` (create-or-update),
-  `/admin/notes/delete`, `/admin/allow-delete` — same core as MCP.
+  `/admin/notes/delete`, `/admin/allow-delete` - same core as MCP.
 - **v1.5.0 navigation reads**: `vault.browse` and `vault.read_batch`
   take the read surface from five tools to seven (both `vault.read`-scoped).
 
@@ -221,7 +221,7 @@ The tag set changes only in this package's releases.
 ## Operator commands (`mtk`)
 
 This package ships an `mtk vault` command group in `server/mtk-commands.toml`
-(a passthrough to `ob` **inside the container** — nothing ever syncs on the
+(a passthrough to `ob` **inside the container** - nothing ever syncs on the
 operator machine); [modal-toolkit](https://github.com/kylebrodeur/modal-toolkit)
 mounts it when this repo is present in the workspace:
 `mtk vault status | sync | pull-only | sync-on-write | mirror-remote |

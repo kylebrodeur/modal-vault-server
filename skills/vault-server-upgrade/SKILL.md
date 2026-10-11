@@ -14,7 +14,7 @@ metadata:
 
 This is the repo whose live lane a rogue deploy WIPED on 2026-10-09
 (an agent deployed straight from this public checkout: same app name,
-same Volume, its own sync — the lane's clone state lost). The rules:
+same Volume, its own sync - the lane's clone state lost). The rules:
 
 ## Never deploy from this checkout
 
@@ -40,13 +40,13 @@ uv run --project server pytest server/tests -q   # 189 must pass
 
 Then re-run the lane's `deploy.sh` (scaled-to-zero posture stays:
 Kyle's ruling = the live vault stays OFF until he says otherwise).
-NEVER `git reset`/re-clone to "fix" the version — that wipes local
+NEVER `git reset`/re-clone to "fix" the version - that wipes local
 lane state and can misalign tags.
 
 **Crossing v1.3.0 is BREAKING for lanes pinned at v1.2.4.** v1.3.0
 renamed every knob to `MODAL_VAULT_*` with NO legacy fallback: the
 Secret must be REBUILT with the new key names (`MODAL_VAULT_API_TOKEN`
-+ the five `MODAL_VAULT_OB_*`) BEFORE deploying anything v1.3.0+ — the
++ the five `MODAL_VAULT_OB_*`) BEFORE deploying anything v1.3.0+ - the
 app is fail-closed without `MODAL_VAULT_API_TOKEN`. Rebuilding the
 Secret rotates the bearer, so every MCP client must pick up the new
 token. v1.4.0 (OAuth) is additive on top: `MODAL_VAULT_MCP_AUTH`
@@ -72,7 +72,7 @@ opts into `both`/`oauth`.
   never resolve to another server's value).
 - Secret NAMES are public, values never written; manifests in
   `server/secrets.toml`. Rotation = `mtk secrets rotate` (invalidates
-  live users — flag it).
+  live users - flag it).
 
 ## Hooks + provenance
 

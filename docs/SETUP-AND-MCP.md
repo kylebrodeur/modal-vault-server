@@ -186,7 +186,7 @@ apps → Add a custom app → enter the `/mcp` URL → approve the consent page.
 |------|------|---------|
 | `vault.search` | read | Keyword search over the clone. mode `text` ranks live (every token must match; title hits weigh double); mode `graph` seeds a depth-1 walk from the top-3 matches and returns walked edges too |
 | `vault.read` | read | One note's full text + frontmatter; missing notes return `exists: false` (not errors) |
-| `vault.read_batch` | read | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` — never partial note text |
+| `vault.read_batch` | read | Up to 20 whole notes in caller order within a 120,000-character budget; missing, invalid, or unreadable paths are reported per-path in `errors` - never partial note text |
 | `vault.list` | read | Notes (path + frontmatter), filterable by directory prefix and tag |
 | `vault.browse` | read | Directory discovery: direct child notes (metadata, no body) + child directories with `direct_notes`/`recursive_notes` counts; `path` defaults to the vault root, `recursive: true` walks all descendants, entries are path-sorted and paged via `limit` (default 100, max 500) + `cursor` with `next_cursor` |
 | `vault.query_graph` | read | Link-graph neighborhood around a seed within `depth` hops (note-link edges) |
@@ -207,7 +207,7 @@ truth; the link graph is a live walk.
 Normal read access (search, read, read_batch, list, browse) is the
 whole reachable clone minus a fixed protected set: `.obsidian` and
 `.trash` are pruned at every depth, `..` traversal and symlink escapes
-never resolve, and only Markdown (`.md`) notes are served — non-`.md`
+never resolve, and only Markdown (`.md`) notes are served - non-`.md`
 attachments and local `.review.yaml` review sidecars never appear,
 and every read path must stay inside the vault.
 
@@ -232,7 +232,7 @@ and any other vault layout works the same way.
 
 // 3. Ordered batch read of whole notes (max 20 per call):
 //    caller order preserved; missing/blocked paths land in `errors`
-//    per-path — never partial note text.
+//    per-path - never partial note text.
 {
   "tool": "vault.read_batch",
   "arguments": { "paths": ["10-projects/Roadmap.md", "20-areas/Health.md", "missing.md"] }
@@ -278,7 +278,7 @@ core.
 | `POST /admin/sync-mode` | runtime posture flip: `{"mode": "pull-only"\|"sync-on-write"\|"continuous"}` |
 | `GET /admin/sync-mode` | current posture + whether the continuous daemon is live |
 | `POST /admin/notes` | create-or-update: `{"path","text","agent"}` (snapshot-first, posture-aware sync) |
-| `POST /admin/notes/delete` | delete — **only while the delete window is armed** |
+| `POST /admin/notes/delete` | delete - **only while the delete window is armed** |
 | `POST /admin/allow-delete` | arm/disarm/inspect the windowed delete door: `{"action":"arm"\|"disarm"\|"status","window_minutes":60}` |
 
 The flip is a RUNTIME decision persisted in the state dir
@@ -356,25 +356,25 @@ Lanes that stand up their own instance of this server (a project, an
 agent team) integrate WITHOUT touching upstream code:
 
 - **The three options, in order of preference:**
-  1. *Deploy upstream directly* — for STANDALONE public users only. Set
+  1. *Deploy upstream directly* - for STANDALONE public users only. Set
      the Secret + the `MODAL_VAULT_*` runtime knobs; the app keeps its default
      instance names (`server/app.py` fixes the app, Secret, and Volume
      names in code). Adoption path: pull the tag + redeploy.
   2. *Ship a deploy overlay* (your own repo dir referencing this
-     checkout) — for LANES sharing a workspace with other instances. The
+     checkout) - for LANES sharing a workspace with other instances. The
      overlay composes a distinct app name + secret names (the instance
      names are deployment wiring there, not config); use
-     **`server/hooks`** to hook IN — never monkeypatch upstream modules.
+     **`server/hooks`** to hook IN - never monkeypatch upstream modules.
      Hooks are named lifecycle functions:
-     - `hooks.register("boot.pre", fn(cfg, sync))` — runs before
+     - `hooks.register("boot.pre", fn(cfg, sync))` - runs before
        login/pull on every boot.
-     - `hooks.register("boot.post", fn(cfg, report))` — runs after boot
+     - `hooks.register("boot.post", fn(cfg, report))` - runs after boot
        with the health-shaped report.
-     - `hooks.register("write.post", fn(report))` — runs after every
+     - `hooks.register("write.post", fn(report))` - runs after every
        MCP/REST write/delete/revert with the full write report.
      Multiple hooks coexist (you can build ON TOP of another lane's
      hook); a hook's errors are contained and reported (they never break
-     boot or writes) — the tag list is closed; new tags are upstream
+     boot or writes) - the tag list is closed; new tags are upstream
      work. The decorator form reads best in an overlay:
 
      ```python
