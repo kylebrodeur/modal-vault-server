@@ -14,7 +14,7 @@ Applies once `mtk doctor --pkg vault` shows the app live (`deployed`).
 - The write door (deliberate, v1.1.0): `POST /admin/notes`
   (create-or-update), `/admin/notes/delete`.
 - Runtime sync postures via `POST /admin/sync-mode`: `pull-only` (default) and
-  more after a lane asks; a posture flip must be Kyle-asked.
+  more after a lane asks; a posture flip requires the operator's approval.
 - Delete stays OFF in the steady state: a windowed `allow_delete` runtime flag
   (`POST /admin/allow-delete`, self-expiring, restart-safe) can arm it, and
   armed deletes still need a successful pre-delete snapshot. No snapshot, no
@@ -25,7 +25,7 @@ Applies once `mtk doctor --pkg vault` shows the app live (`deployed`).
 ## Rules
 
 - Bearer token from the `modal-vault-secret` Secret; never commit real
-  `VAULT_API_TOKEN` values.
+  `MODAL_VAULT_API_TOKEN` values.
 - Data plane: real sync happens INSIDE the vault container on the Volume-backed
   workspace (`mtk vault ...` passthrough), never local sync on the operator
   machine.

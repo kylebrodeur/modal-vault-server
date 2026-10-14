@@ -17,8 +17,8 @@ preflight (files + composed app name), the vendor drift check
 (lists missing, asks per secret), then the overlay's `deploy.sh`.
 
 An overridden drift deploy needs the explicit `--allow-local-changes`; it is
-recorded in the project state only after deploy.sh exits 0, and stays visible
-in `mtk doctor`. It is never the default.
+recorded in the project state only after deploy.sh exits 0. It is never the
+default.
 
 The vault has no `seed.json` (no model store): `mtk seed vault` offers nothing.
 
