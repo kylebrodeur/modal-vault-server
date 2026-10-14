@@ -14,23 +14,21 @@ boundaries, and handler errors are contained and reported
 ## Register an observer
 
 In the overlay (a small module the overlay adds to PYTHONPATH), never in
-`vendor/`. Import the seam directly (`hooks` lives in `server/hooks.py`):
+`vendor/`. Import the seam exactly as the README shows:
 
 ```python
-from hooks import hooks
+from server.hooks import hooks
 
+
+@hooks.on("boot.post")
 def observe(cfg, boot_report):
     print(boot_report)
-
-hooks.register("boot.post", observe)
-# or pre-bound: from hooks import register, TAG_BOOT_POST
-# register(TAG_BOOT_POST, observe)
 ```
 
-`boot.pre` fires before login/pull: handler takes `(cfg, sync-service)`.
-`boot.post`: `(cfg, boot_report dict)`. `write.post`: `(write_report dict)`,
-after each write/delete/revert. Handler errors are contained and reported
-(`last_errors(tag)`), never the server.
+Tags and payloads: `boot.pre` before login/pull handler `(cfg, sync-service)`;
+`boot.post` after boot, handler `(cfg, boot_report dict)`; `write.post` after
+each write/delete/revert, handler `(write_report dict)`. Handler errors are
+contained and reported (`last_errors(tag)`), never the server.
 
 ## Boot provenance reporting
 
