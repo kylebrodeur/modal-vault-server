@@ -17,24 +17,32 @@ cd vault-lab
 ## 2. Pull the package
 
 ```bash
-mtk pull vault
+mtk pull vault --tag v1.5.0
 ```
 
-The repo is cloned into your repos root. An existing checkout is left alone.
+The package is vendored into `vendor/vault-server/`: a git checkout pinned to
+the exact release tag, read-only and drift-guarded. Its provenance (repo, tag,
+commit) is recorded beside it.
 
 ## 3. Write the overlay
 
-Create `deploys/vault/` with two files. The app name must be `<project>-vault`.
+Create `deploys/vault-server/` with two files. The app name must be
+`<project>-vault`.
 
-`deploys/vault/deploy.json`:
+`deploys/vault-server/deploy.json`:
 
 ```json
-{ "pkg": "vault", "app_name": "vault-lab-vault" }
+{
+  "pkg": "vault",
+  "app_name": "vault-lab-vault",
+  "upstream": { "repo": "modal-vault-server", "tag": "v1.5.0" }
+}
 ```
 
-`deploys/vault/deploy.sh`: the entry point that runs `modal deploy` from the
-pulled checkout by path. Keep it in your project; never deploy from inside the
-package checkout.
+`deploys/vault-server/deploy.sh`: the entry point. It deploys the VENDORED
+copy under `vendor/vault-server/`: never a live checkout, never inside the
+vendored tree. `mtk deploy vault` runs it after the preflight, drift, and
+secrets gates.
 
 ## 4. Deploy
 
