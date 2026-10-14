@@ -1,8 +1,6 @@
 ---
 name: vault-server-upgrade
-description: The vault lane's upgrade + deploy contract: overlay-only deploys, tag upgrades, secret/bootstrap flow, and the write-door posture. Born from the 2026-10-09 wipe incident.
-
-Use when working on modal-vault-server, upgrading or redeploying the writing-duo vault lane, or before ANY modal command inside this checkout.
+description: The vault lane's upgrade + deploy contract: overlay-only deploys, tag upgrades, secret/bootstrap flow, and the write-door posture. Use when working on modal-vault-server, upgrading or redeploying the a consumer project vault lane, or before ANY modal command inside this checkout.
 license: Apache-2.0
 metadata:
   author: kylebrodeur
@@ -24,7 +22,7 @@ tools/guards/deploy-provenance.sh <your-overlay-dir>
 ```
 
 - Refuses plain-repo deploys + app names not shaped `<slug>-vault`.
-- The writing-duo lane's overlay: `writing-duo/deploys/vault-server/`
+- The a consumer project lane's overlay: `a consumer project/deploys/vault-server/`
   (`deploy.json` composes the lane's app name + secret names).
 - The LIVE app for a lane = that lane's composed name; a second app on
   the shared Volume = the wipe vector. `modal app list` before AND
@@ -86,3 +84,19 @@ opts into `both`/`oauth`.
   (`modal app stop`) and surface it to Kyle immediately.
 - Write door: pulls are safe any time; writes are posture-gated
   (pull-only default). A lane flipping sync-mode must be Kyle-asked.
+
+## Operating with mtk
+
+Source of truth: the [quickstart](../../docs/quickstart.md) and
+[how-to](../../docs/how-to.md) in this repo, and the toolkit's `mtk` skill.
+
+```bash
+mtk init <project-id>      # from the project directory; checks prerequisites and the account
+mtk pull vault             # clone this repo into the repos root
+mtk deploy vault           # preflight the overlay, confirm secrets, run deploys/vault/deploy.sh
+mtk doctor --pkg vault     # health and drift
+```
+
+- Overlay: `deploys/vault/deploy.json` must name the app `<project>-vault`.
+- Secrets this package declares: modal-vault-secret (MODAL_VAULT_API_TOKEN, generated). `mtk deploy` asks before creating any.
+- Never run `modal deploy` inside this checkout.
