@@ -1,0 +1,34 @@
+# The lifecycle skills this package ships. mtk reads this manifest from the
+# vendored copy; names compose as mtk-<pkg>-<stage>. applies = the lowest
+# lifecycle link a skill needs (any | configured | deployed).
+[[skill]]
+name = "mtk-vault-init-config"
+path = "skills/mtk-vault-init-config"
+stage = "init-config"
+applies = "any"
+when = "starting a project that uses the vault, or writing its overlay"
+summary = "Init, overlay, and first config for a vault project."
+
+[[skill]]
+name = "mtk-vault-setup-hooks"
+path = "skills/mtk-vault-setup-hooks"
+stage = "setup-hooks"
+applies = "any"
+when = "wiring lifecycle hooks, provenance reporting, or vault-side observers"
+summary = "Register hooks on the vault seam (boot.pre, boot.post, write.post)."
+
+[[skill]]
+name = "mtk-vault-build-deploy"
+path = "skills/mtk-vault-build-deploy"
+stage = "build-deploy"
+applies = "any"
+when = "deploying or upgrading the vault (seed, secrets gate, drift check)"
+summary = "Deploy and upgrade recipes for the vault."
+
+[[skill]]
+name = "mtk-vault-develop"
+path = "skills/mtk-vault-develop"
+stage = "develop"
+applies = "deployed"
+when = "building on a running vault: write door, sync modes, MCP surfaces"
+summary = "Day-2 work against a live vault instance."
