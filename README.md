@@ -9,6 +9,12 @@ Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read
 [![Runs on Modal](https://img.shields.io/badge/Runs%20on-Modal-green.svg)](https://modal.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink.svg)](https://github.com/sponsors/kylebrodeur)
 
+## Docs
+
+- [Quickstart](docs/quickstart.md): from a new project to a deployed Obsidian vault served over MCP, using the `mtk` toolkit.
+- [How-to](docs/how-to.md): day-to-day operation of this server.
+- [Modal Toolkit](https://github.com/kylebrodeur/modal-toolkit): the operator CLI (`mtk`) that deploys it.
+
 ## What it is
 
 A single scale-to-zero Modal CPU app keeps a server-side clone of your Obsidian vault current via Headless Sync (`ob`, pull-only by default) and serves that clone to any MCP-speaking agent: read tools always, plus posture-gated write tools. There is no vector index in this repo: keyword search is a live scan of the clone and the link graph is a live walk, so the clone itself is the only source of truth. Semantic search arrives by connecting [modal-embedding-server](https://github.com/kylebrodeur/modal-embedding-server) later; this repo stays vault + MCP only.

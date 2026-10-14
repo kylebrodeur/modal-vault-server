@@ -393,7 +393,7 @@ agent team) integrate WITHOUT touching upstream code:
   Secrets work without remapping. The app / Secret / Volume NAMES are
   NOT runtime-overridable; a lane that needs distinct names uses an
   overlay (§7 above).
-- **Upgrading an overlay lane** (the writing-duo vault-ob pattern): when
+- **Upgrading an overlay lane** (a consumer's vault-ob overlay pattern): when
   upstream grows the behavior you monkeypatched, retire your patch and
   register the remainder as hooks (or nothing at all). Then: pull
   upstream, run your deploy script, verify `/health` + your lane's
