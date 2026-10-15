@@ -26,3 +26,7 @@ Include any relevant stack trace or error message (sanitize secrets and API toke
 
 **Additional context**
 Anything else that might help (screenshots, request IDs, timing).
+
+**Security**
+Reporting a security vulnerability? Do not use this template: the
+Security tab's private reporting is the path.
