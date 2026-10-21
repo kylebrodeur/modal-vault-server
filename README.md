@@ -9,6 +9,19 @@ Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read
 [![Runs on Modal](https://img.shields.io/badge/Runs%20on-Modal-green.svg)](https://modal.com)
 [![Sponsor](https://img.shields.io/badge/Sponsor-GitHub%20Sponsors-pink.svg)](https://github.com/sponsors/kylebrodeur)
 
+---
+
+### Production Support, Operator Kit & Architecture Services
+
+The Modal Toolkit projects remain open-source and free to use. For production deployments and team operations, these commercial options are available:
+
+- **[Modal Production Operator Kit ($29)](https://github.com/sponsors/kylebrodeur):** A version-locked vendor installer, a real `mtk` overlay example, retrieval and fine-tune data recipes, a dated cost worksheet, and a Modal Vault MCP client installer.
+- **[Modal Architecture, Cost & Safety Audit ($147)](https://github.com/sponsors/kylebrodeur):** A written audit of one Modal application or deploy tree, with prioritized findings and recommendations.
+- **[Modal Vendor-Overlay Refactor ($247)](https://github.com/sponsors/kylebrodeur):** One ready-to-review pull request that moves one supported Modal package into a vendored overlay.
+- **[GitHub Sponsors ($9-$389/mo or one-time)](https://github.com/sponsors/kylebrodeur):** Monthly support, kit licenses, architecture calls, and retainer hours. Every tier's exact benefits are on that page.
+
+---
+
 ## Docs
 
 - [Quickstart](docs/quickstart.md): from a new project to a deployed Obsidian vault served over MCP, using the `mtk` toolkit.
