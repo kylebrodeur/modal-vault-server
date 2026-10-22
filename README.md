@@ -1,3 +1,5 @@
+<img src="https://kylebrodeur.xyz/brand/readme-headers/modal-vault-server.png" alt="modal-vault-server: a hosted vault and MCP memory plane" width="100%">
+
 # modal-vault-server
 
 Hosted Obsidian vault + MCP memory plane on Modal; agents connect over MCP (read tools always on; write tools posture-gated, pull-only by default).
